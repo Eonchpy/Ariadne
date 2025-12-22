@@ -1,0 +1,1638 @@
+openapi: 3.1.0
+info:
+  title: Ariadne Metadata Management API
+  version: 0.1.0
+  description: >
+    Phase 0 contract for Ariadne backend. Covers authentication, metadata CRUD,
+    lineage management (with lineage_source), bulk import/export, semantic search,
+    and AI assistant endpoints. All endpoints are prefixed with `/api/v1`.
+servers:
+  - url: /api/v1
+tags:
+  - name: auth
+    description: Authentication
+  - name: sources
+    description: Data source management
+  - name: tables
+    description: Table metadata
+  - name: fields
+    description: Field/column metadata
+  - name: lineage
+    description: Lineage graph operations
+  - name: import_export
+    description: Bulk import/export workflows
+  - name: search
+    description: Full-text search
+  - name: ai
+    description: AI assistant and semantic search
+  - name: users
+    description: User profile and identity
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with email/password to receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token using refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Refreshed tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout and revoke refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/me:
+    get:
+      tags: [users]
+      summary: Get current authenticated user profile
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sources:
+    get:
+      tags: [sources]
+      summary: List data sources
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/size'
+        - in: query
+          name: type
+          schema:
+            $ref: '#/components/schemas/SourceType'
+        - in: query
+          name: is_active
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated sources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [sources]
+      summary: Create data source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /sources/test-connection:
+    post:
+      tags: [sources]
+      summary: Test connection for a source configuration (no persistence)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceCreateRequest'
+      responses:
+        '200':
+          description: Connection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /sources/{source_id}:
+    get:
+      tags: [sources]
+      summary: Get source by id
+      parameters:
+        - $ref: '#/components/parameters/source_id'
+      responses:
+        '200':
+          description: Source detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [sources]
+      summary: Update source
+      parameters:
+        - $ref: '#/components/parameters/source_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceUpdateRequest'
+      responses:
+        '200':
+          description: Updated source
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [sources]
+      summary: Delete (soft-delete) source
+      parameters:
+        - $ref: '#/components/parameters/source_id'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /sources/{source_id}/sync:
+    post:
+      tags: [sources]
+      summary: Trigger metadata sync job for a source
+      parameters:
+        - $ref: '#/components/parameters/source_id'
+        - in: query
+          name: full_sync
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '202':
+          description: Sync job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncJobResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables:
+    get:
+      tags: [tables]
+      summary: List tables
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/size'
+        - in: query
+          name: source_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: tags
+          schema:
+            type: array
+            items:
+              type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated tables
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [tables]
+      summary: Create table metadata (manual)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Table'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables/{table_id}:
+    get:
+      tags: [tables]
+      summary: Get table detail
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      responses:
+        '200':
+          description: Table detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [tables]
+      summary: Update table metadata
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Table'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [tables]
+      summary: Delete table metadata
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables/{table_id}/history:
+    get:
+      tags: [tables]
+      summary: List change history for table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/size'
+      responses:
+        '200':
+          description: Table history entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables/{table_id}/fields:
+    get:
+      tags: [fields]
+      summary: List fields for a table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      responses:
+        '200':
+          description: Fields of the table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /fields:
+    post:
+      tags: [fields]
+      summary: Create field metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Field'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /fields/{field_id}:
+    get:
+      tags: [fields]
+      summary: Get field detail
+      parameters:
+        - $ref: '#/components/parameters/field_id'
+      responses:
+        '200':
+          description: Field detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Field'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [fields]
+      summary: Update field metadata
+      parameters:
+        - $ref: '#/components/parameters/field_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Field'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [fields]
+      summary: Delete field metadata
+      parameters:
+        - $ref: '#/components/parameters/field_id'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/table/{table_id}/upstream:
+    get:
+      tags: [lineage]
+      summary: Get upstream lineage graph for a table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+        - in: query
+          name: depth
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+            default: 3
+        - in: query
+          name: source_filter
+          schema:
+            $ref: '#/components/schemas/LineageSource'
+      responses:
+        '200':
+          description: Lineage graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageGraphResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/table/{table_id}/downstream:
+    get:
+      tags: [lineage]
+      summary: Get downstream lineage graph for a table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+        - in: query
+          name: depth
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+            default: 3
+      responses:
+        '200':
+          description: Lineage graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageGraphResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/table:
+    post:
+      tags: [lineage]
+      summary: Create table-level lineage relationship
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableLineageCreateRequest'
+      responses:
+        '201':
+          description: Created lineage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageRelationship'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/field:
+    post:
+      tags: [lineage]
+      summary: Create field-level lineage relationship
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldLineageCreateRequest'
+      responses:
+        '201':
+          description: Created lineage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageRelationship'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/{lineage_id}/approve:
+    post:
+      tags: [lineage]
+      summary: Approve or reject lineage relationship
+      parameters:
+        - $ref: '#/components/parameters/lineage_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LineageApprovalRequest'
+      responses:
+        '200':
+          description: Updated lineage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageRelationship'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/impact/{table_id}:
+    get:
+      tags: [lineage]
+      summary: Impact analysis for a table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+        - in: query
+          name: change_type
+          schema:
+            type: string
+            example: schema_change
+      responses:
+        '200':
+          description: Impact analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpactAnalysisResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /import/validate:
+    post:
+      tags: [import_export]
+      summary: Validate import file without execution
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                import_type:
+                  $ref: '#/components/schemas/ImportType'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /import/execute:
+    post:
+      tags: [import_export]
+      summary: Execute import (validated then applied)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                import_type:
+                  $ref: '#/components/schemas/ImportType'
+                mode:
+                  type: string
+                  description: all_or_nothing or partial
+                  enum: [all_or_nothing, partial]
+                  default: all_or_nothing
+                skip_errors:
+                  type: boolean
+                  default: false
+      responses:
+        '202':
+          description: Import job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJobResponse'
+        '422':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /import/jobs/{job_id}:
+    get:
+      tags: [import_export]
+      summary: Get import job status
+      parameters:
+        - $ref: '#/components/parameters/job_id'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJobStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /export/metadata:
+    get:
+      tags: [import_export]
+      summary: Export metadata to file
+      parameters:
+        - in: query
+          name: source_ids
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+        - in: query
+          name: tags
+          schema:
+            type: array
+            items:
+              type: string
+        - in: query
+          name: format
+          schema:
+            $ref: '#/components/schemas/ExportFormat'
+            default: csv
+      responses:
+        '200':
+          description: File stream
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+            application/x-yaml:
+              schema:
+                type: string
+                format: binary
+            application/vnd.ms-excel:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: '#/components/responses/Error'
+
+  /search:
+    get:
+      tags: [search]
+      summary: Full-text search across metadata
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [table, field, source]
+        - in: query
+          name: source_ids
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/size'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /ai/query:
+    post:
+      tags: [ai]
+      summary: Natural language query over metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIQueryRequest'
+      responses:
+        '200':
+          description: Answer with citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIQueryResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /ai/search:
+    post:
+      tags: [ai]
+      summary: Semantic search via pgvector
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticSearchRequest'
+      responses:
+        '200':
+          description: Semantic search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticSearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /ai/explain-lineage:
+    post:
+      tags: [ai]
+      summary: AI-generated explanation of lineage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExplainLineageRequest'
+      responses:
+        '200':
+          description: Explanation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageExplanationResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    size:
+      in: query
+      name: size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    source_id:
+      in: path
+      name: source_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    table_id:
+      in: path
+      name: table_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    field_id:
+      in: path
+      name: field_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    lineage_id:
+      in: path
+      name: lineage_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    job_id:
+      in: path
+      name: job_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          example: 3600
+        user:
+          $ref: '#/components/schemas/User'
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+    RefreshResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          example: 3600
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SourceType:
+      type: string
+      enum: [oracle, mongodb, elasticsearch, other]
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/SourceType'
+        description:
+          type: string
+        connection_config:
+          type: object
+          description: Redacted connection information
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SourceCreateRequest:
+      type: object
+      required: [name, type, connection_config]
+      properties:
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/SourceType'
+        description:
+          type: string
+        connection_config:
+          type: object
+          additionalProperties: true
+    SourceUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SourceCreateRequest'
+      properties:
+        is_active:
+          type: boolean
+    ConnectionTestResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        latency_ms:
+          type: integer
+    SyncJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: running
+        started_at:
+          type: string
+          format: date-time
+    SourceListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+        pages:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+
+    Table:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        schema_name:
+          type: string
+          description: Logical schema or database namespace
+        qualified_name:
+          type: string
+          description: Fully qualified name, e.g., schema.table
+        type:
+          type: string
+          example: table
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        row_count:
+          type: integer
+        field_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TableDetail:
+      allOf:
+        - $ref: '#/components/schemas/Table'
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/Field'
+    TableCreateRequest:
+      type: object
+      required: [name, source_id]
+      properties:
+        source_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    TableUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    TableListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+        pages:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Table'
+
+    Field:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        table_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        data_type:
+          type: string
+        description:
+          type: string
+        is_nullable:
+          type: boolean
+        is_primary_key:
+          type: boolean
+        is_foreign_key:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    FieldCreateRequest:
+      type: object
+      required: [table_id, name, data_type]
+      properties:
+        table_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        data_type:
+          type: string
+        description:
+          type: string
+        is_nullable:
+          type: boolean
+        is_primary_key:
+          type: boolean
+        is_foreign_key:
+          type: boolean
+    FieldUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        data_type:
+          type: string
+        description:
+          type: string
+        is_nullable:
+          type: boolean
+        is_primary_key:
+          type: boolean
+        is_foreign_key:
+          type: boolean
+    FieldListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Field'
+
+    HistoryEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          example: table
+        entity_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          example: update
+        actor:
+          type: string
+          example: user@example.com
+        changes:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    HistoryListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+        pages:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+
+    LineageSource:
+      type: string
+      enum: [inferred, manual, approved]
+    LineageRelationship:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [table, field]
+        source_node_id:
+          type: string
+          format: uuid
+        target_node_id:
+          type: string
+          format: uuid
+        transformation_type:
+          type: string
+          example: ETL
+        transformation_logic:
+          type: string
+        lineage_source:
+          $ref: '#/components/schemas/LineageSource'
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          default: pending
+        approved_by:
+          type: string
+          format: email
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        confidence:
+          type: number
+          format: float
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    TableLineageCreateRequest:
+      type: object
+      required: [source_table_id, target_table_id, lineage_source]
+      properties:
+        source_table_id:
+          type: string
+          format: uuid
+        target_table_id:
+          type: string
+          format: uuid
+        transformation_type:
+          type: string
+        transformation_logic:
+          type: string
+        lineage_source:
+          $ref: '#/components/schemas/LineageSource'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+    FieldLineageCreateRequest:
+      type: object
+      required: [source_field_id, target_field_id, lineage_source]
+      properties:
+        source_field_id:
+          type: string
+          format: uuid
+        target_field_id:
+          type: string
+          format: uuid
+        transformation_logic:
+          type: string
+        lineage_source:
+          $ref: '#/components/schemas/LineageSource'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+    LineageApprovalRequest:
+      type: object
+      required: [approved]
+      properties:
+        approved:
+          type: boolean
+        comment:
+          type: string
+
+    LineageGraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        type:
+          type: string
+          enum: [table, field]
+        source_id:
+          type: string
+          format: uuid
+          nullable: true
+    LineageGraphEdge:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: uuid
+        to:
+          type: string
+          format: uuid
+        lineage_source:
+          $ref: '#/components/schemas/LineageSource'
+        confidence:
+          type: number
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+    LineageGraphResponse:
+      type: object
+      properties:
+        root_id:
+          type: string
+          format: uuid
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageGraphNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageGraphEdge'
+
+    ImpactAnalysisItem:
+      type: object
+      properties:
+        node_id:
+          type: string
+          format: uuid
+        node_type:
+          type: string
+          enum: [table, field]
+        impact_level:
+          type: string
+          enum: [low, medium, high]
+        reason:
+          type: string
+    ImpactAnalysisResponse:
+      type: object
+      properties:
+        table_id:
+          type: string
+          format: uuid
+        change_type:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactAnalysisItem'
+
+    ImportType:
+      type: string
+      enum: [lineage, tables, fields, mixed]
+    ExportFormat:
+      type: string
+      enum: [csv, json, yaml, xlsx]
+    ValidationErrorItem:
+      type: object
+      properties:
+        row:
+          type: integer
+        field:
+          type: string
+        code:
+          type: string
+          example: SCHEMA_MISMATCH
+        message:
+          type: string
+    ValidationResponse:
+      type: object
+      properties:
+        is_valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationErrorItem'
+        summary:
+          type: object
+          properties:
+            total_rows:
+              type: integer
+            valid_rows:
+              type: integer
+            invalid_rows:
+              type: integer
+    ImportJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: queued
+        started_at:
+          type: string
+          format: date-time
+    ImportJobStatusResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        stats:
+          type: object
+          properties:
+            processed_rows:
+              type: integer
+            succeeded_rows:
+              type: integer
+            failed_rows:
+              type: integer
+        error_report_url:
+          type: string
+          nullable: true
+
+    SearchHit:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [table, field, source]
+        title:
+          type: string
+        snippet:
+          type: string
+        score:
+          type: number
+    SearchResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+        pages:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+
+    AIQueryRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+        filters:
+          type: object
+          additionalProperties: true
+    AICitation:
+      type: object
+      properties:
+        entity_type:
+          type: string
+          enum: [table, field, source, lineage]
+        entity_id:
+          type: string
+        snippet:
+          type: string
+    AIQueryResponse:
+      type: object
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AICitation'
+        latency_ms:
+          type: integer
+
+    SemanticSearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          default: 10
+        threshold:
+          type: number
+          default: 0.7
+    SemanticSearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+        entity_type:
+          type: string
+          enum: [table, field, source]
+        title:
+          type: string
+        score:
+          type: number
+    SemanticSearchResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticSearchResult'
+
+    ExplainLineageRequest:
+      type: object
+      required: [table_id, direction]
+      properties:
+        table_id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: [upstream, downstream]
+    LineageExplanationResponse:
+      type: object
+      properties:
+        explanation:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AICitation'
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
