@@ -2,6 +2,7 @@ from typing import AsyncIterator
 from neo4j import AsyncGraphDatabase, AsyncDriver
 
 from app.config import settings
+from app.graph import queries
 
 
 def get_neo4j_driver() -> AsyncDriver:
@@ -17,3 +18,9 @@ async def neo4j_dependency() -> AsyncIterator[AsyncDriver]:
         yield driver
     finally:
         await driver.close()
+
+
+async def ensure_constraints(driver: AsyncDriver) -> None:
+    async with driver.session() as session:
+        await session.run(queries.CREATE_TABLE_CONSTRAINT)
+        await session.run(queries.CREATE_FIELD_CONSTRAINT)

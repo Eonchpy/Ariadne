@@ -11,16 +11,24 @@ const client = axios.create({
 
 client.interceptors.request.use(
   (config) => {
+    // DEBUG LOGGING
+    console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, {
+      headers: config.headers,
+      data: config.data,
+      params: config.params
+    });
+
     try {
       const storageItem = localStorage.getItem('auth-storage');
       if (storageItem) {
-        const { state } = JSON.parse(storageItem);
-        if (state?.token) {
-          config.headers.Authorization = `Bearer ${state.token}`;
+        const parsed = JSON.parse(storageItem);
+        const token = parsed?.state?.token;
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
       }
     } catch (e) {
-      console.error('Error parsing auth token', e);
+      console.error('Error parsing auth token from storage', e);
     }
     return config;
   },
@@ -28,22 +36,34 @@ client.interceptors.request.use(
 );
 
 client.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    // DEBUG LOGGING FOR SUCCESSFUL RESPONSES
+    console.log('[API Response Success]', {
+      url: response.config.url,
+      status: response.status,
+      data: response.data
+    });
+    return response.data;
+  },
   (error) => {
     const { response } = error;
     if (response) {
-      const errorMsg = response.data?.error?.message || 'An error occurred';
-      // We don't automatically redirect on 401 here to avoid circular dependencies.
-      // The calling code or a global event listener should handle it.
-      // But we will show the error message for non-401s, or even 401s if we want.
+      // DEBUG LOGGING FOR ERRORS
+      console.error('[API Error Response]', {
+        status: response.status,
+        data: response.data,
+        headers: response.headers
+      });
+
       if (response.status === 401) {
-         message.error('Session expired or invalid credentials');
-      } else if (response.status === 403) {
-         message.error('You do not have permission to perform this action');
-      } else if (response.status >= 500) {
-         message.error('Server error, please try again later');
+        // Only show message if it's not a login attempt
+        if (!response.config.url?.includes('/auth/login')) {
+            message.error('Session expired. Please log in again.');
+            // We could trigger logout here if we had access to the store
+        }
       } else {
-         message.error(errorMsg);
+        const errorMsg = response.data?.error?.message || 'An error occurred';
+        message.error(errorMsg);
       }
     } else {
       message.error('Network error. Please check your connection.');

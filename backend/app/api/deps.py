@@ -49,8 +49,8 @@ async def get_current_user(
     if not user_model:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
+        detail="User not found",
+    )
     return User(
         id=str(user_model.id),
         email=user_model.email,
@@ -59,3 +59,12 @@ async def get_current_user(
         created_at=user_model.created_at,
         updated_at=user_model.updated_at,
     )
+
+
+async def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+    if "admin" not in (current_user.roles or []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin only",
+        )
+    return current_user

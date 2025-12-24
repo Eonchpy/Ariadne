@@ -7,7 +7,7 @@ from app.schemas.field import Field as FieldSchema
 
 
 class TableBase(BaseModel):
-    source_id: str
+    source_id: str | None = None
     name: str
     type: str | None = None
     description: str | None = None

@@ -10,7 +10,9 @@ import {
   TableOutlined,
   ApartmentOutlined,
   CloudUploadOutlined,
-  RobotOutlined
+  RobotOutlined,
+  SettingOutlined,
+  TagsOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
@@ -26,6 +28,19 @@ export const MainLayout: React.FC = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  const isAdmin = user?.roles?.includes('admin');
+
+  // Helper to determine active menu key based on path
+  const getSelectedKeys = () => {
+    const { pathname } = location;
+    if (pathname.startsWith('/metadata/tables')) return ['/metadata/tables'];
+    if (pathname.startsWith('/sources')) return ['/sources'];
+    if (pathname.startsWith('/lineage')) return ['/lineage'];
+    if (pathname.startsWith('/import')) return ['/import'];
+    if (pathname.startsWith('/settings/tags')) return ['/settings/tags'];
+    return [pathname];
   };
 
   const menuItems: any[] = [
@@ -45,7 +60,6 @@ export const MainLayout: React.FC = () => {
       label: 'Metadata',
       children: [
         { key: '/metadata/tables', label: <Link to="/metadata/tables">Tables</Link> },
-        { key: '/metadata/fields', label: <Link to="/metadata/fields">Fields</Link> },
       ]
     },
     {
@@ -64,6 +78,21 @@ export const MainLayout: React.FC = () => {
       label: <Link to="/ai">AI Assistant</Link>,
     },
   ];
+
+  if (isAdmin) {
+    menuItems.push({
+      key: '/settings',
+      icon: <SettingOutlined />,
+      label: 'Settings',
+      children: [
+        { 
+          key: '/settings/tags', 
+          icon: <TagsOutlined />,
+          label: <Link to="/settings/tags">Tag Management</Link> 
+        },
+      ]
+    });
+  }
 
   const userMenu = {
     items: [
@@ -87,13 +116,27 @@ export const MainLayout: React.FC = () => {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider trigger={null} collapsible collapsed={collapsed}>
-        <div style={{ height: 32, margin: 16, background: 'rgba(255, 255, 255, 0.2)', textAlign: 'center', color: '#fff', lineHeight: '32px', fontWeight: 'bold' }}>
-          {collapsed ? 'Ar' : 'Ariadne'}
-        </div>
-        <Menu
+                <div style={{ 
+                  height: 100, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  padding: '16px 0',
+                  transition: 'all 0.2s'
+                }}>
+                  <div style={{
+                    width: collapsed ? '60px' : '90%', 
+                    height: '60px', 
+                    backgroundImage: 'url(/Ariadne_Logo.png)',
+                    backgroundSize: 'contain',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'center',
+                    transition: 'all 0.2s',
+                  }} />
+                </div>        <Menu
           theme="dark"
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={getSelectedKeys()}
           items={menuItems}
         />
       </Sider>

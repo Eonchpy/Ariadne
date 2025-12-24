@@ -5,11 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.logging import configure_logging
-from app.api.v1 import auth, users, sources, tables, fields
+from app.api.v1 import auth, users, sources, tables, fields, audit, lineage, bulk, tags
 from app.db import SessionLocal
 from app.repositories.user_repo import UserRepository
 from app.models.user import User
 from app.core.security import get_password_hash
+from app.graph.client import get_neo4j_driver, ensure_constraints
 import structlog
 
 
@@ -33,6 +34,14 @@ async def lifespan(app: FastAPI):
                 await repo.add(user)
                 await session.commit()
                 logger.info("bootstrap_admin_created", email=settings.ADMIN_EMAIL)
+    # Startup: ensure Neo4j constraints (best-effort)
+    try:
+        driver = get_neo4j_driver()
+        await ensure_constraints(driver)
+        await driver.close()
+        logger.info("neo4j_constraints_ensured")
+    except Exception as exc:  # pragma: no cover - external service
+        logger.warning("neo4j_constraint_init_failed", error=str(exc))
     yield
     # Shutdown: nothing yet
 
@@ -57,6 +66,10 @@ def create_app() -> FastAPI:
     app.include_router(sources.router, prefix=api_prefix)
     app.include_router(tables.router, prefix=api_prefix)
     app.include_router(fields.router, prefix=api_prefix)
+    app.include_router(audit.router, prefix=api_prefix)
+    app.include_router(lineage.router, prefix=api_prefix)
+    app.include_router(bulk.router, prefix=api_prefix)
+    app.include_router(tags.router, prefix=api_prefix)
 
     @app.get("/health")
     async def health():

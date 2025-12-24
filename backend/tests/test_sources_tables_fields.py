@@ -2,6 +2,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.field import FieldCreate
+
 
 @pytest.mark.asyncio
 async def test_sources_crud(client: AsyncClient):
@@ -102,6 +104,15 @@ async def test_tables_and_fields_flow(client: AsyncClient):
     # delete field
     del_field = await client.delete(f"/api/v1/fields/{field_id}")
     assert del_field.status_code == 204
+
+    # batch create fields
+    batch_payload = [
+        {"table_id": table_id, "name": "col1", "data_type": "text"},
+        {"table_id": table_id, "name": "col2", "data_type": "int"},
+    ]
+    batch_resp = await client.post(f"/api/v1/tables/{table_id}/fields/batch", json=batch_payload)
+    assert batch_resp.status_code == 201
+    assert len(batch_resp.json()["items"]) == 2
 
     # delete table
     del_table = await client.delete(f"/api/v1/tables/{table_id}")

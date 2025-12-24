@@ -403,14 +403,16 @@ CREATE INDEX field_name_idx FOR (f:Field) ON (f.name);
 ### Overall Timeline (22 weeks)
 
 ```
-Week 1-2   | Phase 0: Foundation & Planning          | All Agents Collaborate
-Week 3-5   | Phase 1: Core Infrastructure            | Parallel Development Begins
-Week 6-8   | Phase 2: Connector Framework            | Parallel Development
-Week 9-12  | Phase 3: Lineage Engine                 | Parallel Development (Critical Path)
-Week 13-15 | Phase 4: Bulk Operations                | Parallel Development
-Week 16-19 | Phase 5: AI Integration                 | Parallel Development (Critical Path)
-Week 20-22 | Phase 6: Integration & Deployment       | All Agents Collaborate
+Week 1-2   | Phase 0: Foundation & Planning                      | All Agents Collaborate
+Week 3-5   | Phase 1: Core Infrastructure                        | Parallel Development Begins ✅ COMPLETE
+Week 6-8   | Phase 2: Data Source Connection + Manual Lineage   | Parallel Development
+Week 9-12  | Phase 3: Lineage Engine Enhancement                 | Parallel Development (Critical Path)
+Week 13-15 | Phase 4: AI Integration                             | Parallel Development (Critical Path)
+Week 16-19 | Phase 5: Metadata Extraction & Auto-Sync            | Parallel Development
+Week 20-22 | Phase 6: Integration, Optimization & Deployment     | All Agents Collaborate
 ```
+
+**Key Change**: Phase 2 now focuses on connection testing and manual lineage management. Full metadata extraction is deferred to Phase 5.
 
 ### Phase 0: Foundation & Planning (Week 1-2)
 
@@ -433,47 +435,59 @@ Week 20-22 | Phase 6: Integration & Deployment       | All Agents Collaborate
 - Frontend basic framework (login, layout, routing)
 - End-to-end basic flow working
 
-### Phase 2: Connector Framework & Manual Management (Week 6-8)
+### Phase 2: Data Source Connection + Manual Lineage Management (Week 6-8)
 
-**Objective**: Implement multi-source connections and manual metadata management
+**Objective**: Implement data source connection testing and manual lineage documentation
 
-**Key Milestones**:
-- Oracle/MongoDB/Elasticsearch connectors implemented
-- Metadata sync functionality
-- Manual create/edit metadata UI
-- Version history tracking
-
-### Phase 3: Lineage Engine & Visualization (Week 9-12) ⚠️ Critical Path
-
-**Objective**: Implement core lineage management functionality
+**Key Innovation**: Smart Metadata Assist - On-demand column retrieval for manual tables
 
 **Key Milestones**:
-- Lineage service implementation (create, query, traverse)
-- Interactive lineage graph visualization
-- Manual lineage declaration functionality
-- Lineage source distinction (inferred/manual/approved)
-- Performance optimization (1000+ node graphs)
+- Data source CRUD with connection testing (Oracle/MongoDB/Elasticsearch)
+- Smart metadata assist: Fetch columns from connected sources
+- Manual table/field CRUD (source_id now optional)
+- Neo4j lineage graph setup
+- Manual lineage relationship creation
+- Lineage visualization with ReactFlow
+- Bulk import/export (CSV/Excel/JSON/YAML)
 
-### Phase 4: Bulk Operations (Week 13-15)
+**Architecture Change**: `source_id` in `metadata_tables` is now nullable to support manual tables
 
-**Objective**: Implement bulk import/export functionality
+### Phase 3: Lineage Engine Enhancement (Week 9-12) ⚠️ Critical Path
 
-**Key Milestones**:
-- CSV/Excel/JSON/YAML parsers
-- Validation engine (multi-layer validation)
-- Bulk import wizard (multi-step flow)
-- Export functionality (multi-format support)
-
-### Phase 5: AI Integration (Week 16-19) ⚠️ Critical Path
-
-**Objective**: Implement AI intelligent assistant
+**Objective**: Enhance lineage graph capabilities with advanced queries and analysis
 
 **Key Milestones**:
-- Vector embedding generation and storage
-- RAG pipeline implementation
+- Graph traversal algorithms (upstream/downstream, multi-hop)
+- Impact analysis and root cause analysis
+- Advanced lineage queries with filtering
+- Performance optimization (1000+ node graphs, < 500ms for 3-hop queries)
+- Lineage approval workflow
+- Lineage confidence scoring
+
+### Phase 4: AI Integration (Week 13-15) ⚠️ Critical Path
+
+**Objective**: Implement AI intelligent assistant with RAG
+
+**Key Milestones**:
+- Vector embedding generation and storage (pgvector)
+- RAG pipeline implementation (LangChain)
 - Natural language query interface
-- AI chat interface
+- AI chat interface with conversation history
+- Semantic search for metadata
 - Lineage explanation generation
+
+### Phase 5: Metadata Extraction & Auto-Sync (Week 16-19)
+
+**Objective**: Implement automated metadata extraction from data sources
+
+**Key Milestones**:
+- Oracle metadata extraction (system catalogs: ALL_TABLES, ALL_TAB_COLUMNS)
+- MongoDB schema inference (sampling and analysis)
+- Elasticsearch mapping extraction
+- Automated sync with conflict resolution (merge/keep/replace)
+- Incremental sync and change detection
+- Permission handling and error recovery
+- "Inferred" lineage generation from metadata patterns
 
 ### Phase 6: Integration, Optimization & Deployment (Week 20-22)
 
@@ -656,6 +670,9 @@ GET    /api/v1/search/semantic
 
 ---
 
-**Document Version**: v1.0  
-**Last Updated**: 2025-12-21  
-**Maintainer**: PM Agent
+**Document Version**: v1.1
+**Last Updated**: 2025-12-23
+**Maintainer**: QC Agent (Claude)
+**Change Log**:
+- v1.1 (2025-12-23): Revised Phase 2 to focus on connection testing + manual lineage; deferred metadata extraction to Phase 5
+- v1.0 (2025-12-21): Initial version

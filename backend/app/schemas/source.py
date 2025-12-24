@@ -40,6 +40,13 @@ class Source(SourceBase):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
 
 
+class ConnectionTestResult(BaseModel):
+    success: bool
+    message: str
+    latency_ms: float | None = None
+    error: str | None = None
+
+
 class SourceList(BaseModel):
     total: int
     page: int

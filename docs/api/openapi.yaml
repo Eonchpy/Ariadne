@@ -27,6 +27,8 @@ tags:
     description: AI assistant and semantic search
   - name: users
     description: User profile and identity
+  - name: tags
+    description: Tag management (admin only)
 security:
   - bearerAuth: []
 paths:
@@ -167,6 +169,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConnectionTestResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /sources/{source_id}/test:
+    post:
+      tags: [sources]
+      summary: Test connection for an existing source
+      parameters:
+        - $ref: '#/components/parameters/source_id'
+      responses:
+        '200':
+          description: Connection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /sources/{source_id}/introspect/table:
+    post:
+      tags: [sources]
+      summary: Introspect a table/collection/index for a source
+      parameters:
+        - $ref: '#/components/parameters/source_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [table_name]
+              properties:
+                table_name:
+                  type: string
+                schema_name:
+                  type: string
+                  description: Optional schema/namespace for SQL sources
+      description: |
+        Requires bearer auth. For Oracle, ensure source.connection_config includes host, port, service_name, username, password (or dsn).
+      responses:
+        '200':
+          description: Introspection result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
 
@@ -388,6 +442,52 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
+    post:
+      tags: [fields]
+      summary: Create field metadata for a table (table_id from path)
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldCreateInTable'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Field'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables/{table_id}/fields/batch:
+    post:
+      tags: [fields]
+      summary: Batch create fields for a table (table_id from path)
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/FieldCreateInTable'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Field'
+        default:
+          $ref: '#/components/responses/Error'
 
   /fields:
     post:
@@ -474,10 +574,6 @@ paths:
             minimum: 1
             maximum: 5
             default: 3
-        - in: query
-          name: source_filter
-          schema:
-            $ref: '#/components/schemas/LineageSource'
       responses:
         '200':
           description: Lineage graph
@@ -559,161 +655,71 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
-  /lineage/{lineage_id}/approve:
-    post:
+  /lineage/{lineage_id}:
+    delete:
       tags: [lineage]
-      summary: Approve or reject lineage relationship
+      summary: Delete a lineage relationship by Neo4j relationship id
       parameters:
         - $ref: '#/components/parameters/lineage_id'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LineageApprovalRequest'
       responses:
-        '200':
-          description: Updated lineage
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LineageRelationship'
+        '204':
+          description: Deleted
         '404':
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
 
-  /lineage/impact/{table_id}:
-    get:
-      tags: [lineage]
-      summary: Impact analysis for a table
-      parameters:
-        - $ref: '#/components/parameters/table_id'
-        - in: query
-          name: change_type
-          schema:
-            type: string
-            example: schema_change
-      responses:
-        '200':
-          description: Impact analysis result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ImpactAnalysisResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-
-  /import/validate:
+  /bulk/import:
     post:
       tags: [import_export]
-      summary: Validate import file without execution
+      summary: Bulk import metadata (validate, preview, execute)
+      description: Upload CSV/JSON/YAML/Excel with sources, tables, fields, and lineage. Choose mode to validate, preview changes, or execute transactionally.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required: [file, format]
               properties:
                 file:
                   type: string
                   format: binary
-                import_type:
-                  $ref: '#/components/schemas/ImportType'
-      responses:
-        '200':
-          description: Validation result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ValidationResponse'
-        '422':
-          $ref: '#/components/responses/Error'
-        default:
-          $ref: '#/components/responses/Error'
-
-  /import/execute:
-    post:
-      tags: [import_export]
-      summary: Execute import (validated then applied)
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
+                format:
                   type: string
-                  format: binary
-                import_type:
-                  $ref: '#/components/schemas/ImportType'
+                  enum: [csv, json, yaml, xlsx]
                 mode:
                   type: string
-                  description: all_or_nothing or partial
-                  enum: [all_or_nothing, partial]
-                  default: all_or_nothing
-                skip_errors:
+                  enum: [validate, preview, execute]
+                  default: validate
+                rollback_on_error:
                   type: boolean
-                  default: false
-      responses:
-        '202':
-          description: Import job accepted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ImportJobResponse'
-        '422':
-          $ref: '#/components/responses/Error'
-        default:
-          $ref: '#/components/responses/Error'
-
-  /import/jobs/{job_id}:
-    get:
-      tags: [import_export]
-      summary: Get import job status
-      parameters:
-        - $ref: '#/components/parameters/job_id'
+                  default: true
       responses:
         '200':
-          description: Job status
+          description: Bulk import result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ImportJobStatusResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: '#/components/schemas/BulkImportResponse'
         default:
           $ref: '#/components/responses/Error'
 
-  /export/metadata:
+  /bulk/export:
     get:
       tags: [import_export]
-      summary: Export metadata to file
+      summary: Bulk export metadata
       parameters:
         - in: query
-          name: source_ids
-          schema:
-            type: array
-            items:
-              type: string
-              format: uuid
-        - in: query
-          name: tags
-          schema:
-            type: array
-            items:
-              type: string
-        - in: query
           name: format
+          required: true
           schema:
-            $ref: '#/components/schemas/ExportFormat'
+            type: string
+            enum: [csv, json, yaml, xlsx]
             default: csv
       responses:
         '200':
-          description: File stream
+          description: Exported file
           content:
             text/csv:
               schema:
@@ -731,6 +737,29 @@ paths:
               schema:
                 type: string
                 format: binary
+        default:
+          $ref: '#/components/responses/Error'
+
+  /audit/connection-tests:
+    get:
+      tags: [audit]
+      summary: List connection test audit logs
+      parameters:
+        - in: query
+          name: source_id
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
         default:
           $ref: '#/components/responses/Error'
 
@@ -828,6 +857,165 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /tags:
+    get:
+      tags: [tags]
+      summary: Get tag tree (hierarchical structure)
+      parameters:
+        - in: query
+          name: level
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 3
+          description: Filter by tag level
+        - in: query
+          name: parent_id
+          schema:
+            type: string
+            format: uuid
+          description: Get children of specific parent tag
+      responses:
+        '200':
+          description: Tag tree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagTreeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [tags]
+      summary: Create tag (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tags/{tag_id}:
+    put:
+      tags: [tags]
+      summary: Update tag (admin only)
+      parameters:
+        - $ref: '#/components/parameters/tag_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [tags]
+      summary: Delete tag (admin only)
+      parameters:
+        - $ref: '#/components/parameters/tag_id'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cannot delete tag with children or in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tags/{tag_id}/usage:
+    get:
+      tags: [tags]
+      summary: Get tag usage statistics
+      parameters:
+        - $ref: '#/components/parameters/tag_id'
+      responses:
+        '200':
+          description: Tag usage info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagUsageResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables/{table_id}/tags:
+    get:
+      tags: [tags]
+      summary: Get tags for a table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      responses:
+        '200':
+          description: Table tags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [tags]
+      summary: Add tags to table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableTagsAddRequest'
+      responses:
+        '201':
+          description: Tags added
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tables/{table_id}/tags/{tag_id}:
+    delete:
+      tags: [tags]
+      summary: Remove tag from table
+      parameters:
+        - $ref: '#/components/parameters/table_id'
+        - $ref: '#/components/parameters/tag_id'
+      responses:
+        '204':
+          description: Tag removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -875,6 +1063,13 @@ components:
     lineage_id:
       in: path
       name: lineage_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    tag_id:
+      in: path
+      name: tag_id
       required: true
       schema:
         type: string
@@ -1012,6 +1207,11 @@ components:
           type: string
         connection_config:
           type: object
+          description: |
+            Required fields by source type:
+              - oracle: host, port (default 1521), service_name, username, password (or dsn)
+              - mongodb: uri (e.g. mongodb://user:pass@host:port/db), database (optional)
+              - elasticsearch: hosts (string or array), username/password (optional)
           additionalProperties: true
     SourceUpdateRequest:
       allOf:
@@ -1432,55 +1632,59 @@ components:
           items:
             $ref: '#/components/schemas/ImpactAnalysisItem'
 
-    ImportType:
-      type: string
-      enum: [lineage, tables, fields, mixed]
-    ExportFormat:
-      type: string
-      enum: [csv, json, yaml, xlsx]
-    ValidationErrorItem:
+    BulkImportResponse:
       type: object
       properties:
-        row:
-          type: integer
-        field:
+        mode:
           type: string
-        code:
-          type: string
-          example: SCHEMA_MISMATCH
-        message:
-          type: string
-    ValidationResponse:
-      type: object
-      properties:
-        is_valid:
+          enum: [validate, preview, execute]
+        success:
           type: boolean
-        errors:
-          type: array
-          items:
-            $ref: '#/components/schemas/ValidationErrorItem'
         summary:
           type: object
           properties:
             total_rows:
               type: integer
-            valid_rows:
+            created:
               type: integer
-            invalid_rows:
+            updated:
               type: integer
-    ImportJobResponse:
-      type: object
-      properties:
-        job_id:
+            skipped:
+              type: integer
+        errors:
+          type: array
+          description: Row-level errors for validation/preview/execute
+          items:
+            type: object
+            properties:
+              row:
+                type: integer
+              entity:
+                type: string
+                example: table
+              field:
+                type: string
+              message:
+                type: string
+              code:
+                type: string
+                example: SCHEMA_MISMATCH
+        preview:
+          type: object
+          description: Present when mode=preview
+          properties:
+            to_create:
+              type: array
+              items:
+                type: object
+            to_update:
+              type: array
+              items:
+                type: object
+        transaction_id:
           type: string
-          format: uuid
-        status:
-          type: string
-          example: queued
-        started_at:
-          type: string
-          format: date-time
-    ImportJobStatusResponse:
+          description: Identifier for executed import
+
       type: object
       properties:
         job_id:
@@ -1636,3 +1840,125 @@ components:
             details:
               type: object
               additionalProperties: true
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        level:
+          type: integer
+          minimum: 1
+          maximum: 3
+        path:
+          type: string
+          description: Full path like 'F10-公司概况-公司资料'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TagWithChildren:
+      allOf:
+        - $ref: '#/components/schemas/Tag'
+      properties:
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagWithChildren'
+
+    TagCreateRequest:
+      type: object
+      required: [name, level]
+      properties:
+        name:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        level:
+          type: integer
+          minimum: 1
+          maximum: 3
+
+    TagUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+
+    TagTreeResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagWithChildren'
+
+    TagListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+
+    TagUsageResponse:
+      type: object
+      properties:
+        tag_id:
+          type: string
+          format: uuid
+        tag_name:
+          type: string
+        table_count:
+          type: integer
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              source_id:
+                type: string
+                format: uuid
+
+    TableTagsAddRequest:
+      type: object
+      required: [tag_ids]
+      properties:
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    FieldCreateInTable:
+      type: object
+      required: [name, data_type]
+      properties:
+        name:
+          type: string
+        data_type:
+          type: string
+        description:
+          type: string
+        is_nullable:
+          type: boolean
+        is_primary_key:
+          type: boolean
+        is_foreign_key:
+          type: boolean

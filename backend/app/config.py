@@ -3,7 +3,11 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Core app
     APP_NAME: str = "Ariadne Metadata Management System"
@@ -48,6 +52,9 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     REDIS_POOL_SIZE: int = 10
+
+    # Oracle thick client (optional)
+    ORACLE_CLIENT_LIB_DIR: str | None = "/Users/shenshunan/projects/Ariadne/tools/oracle"
 
 
 @lru_cache
