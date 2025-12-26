@@ -323,17 +323,23 @@ const LineageGraphContent: React.FC = () => {
 
 
   const onEdgeClick = (_: any, edge: any) => {
-    if (edge.id.startsWith('path-') || edge.id.startsWith('e-')) {
+    // Only allow deleting real technical edges
+    const dbId = edge.data?.dbId;
+    if (dbId) {
         Modal.confirm({
             title: 'Delete Lineage Relationship?',
-            content: 'This will permanently remove the relationship.',
+            content: 'This will permanently remove the technical data flow relationship between these entities.',
+            okText: 'Delete',
+            okType: 'danger',
+            cancelText: 'Cancel',
             onOk: async () => {
                 try {
-                    const originalId = edge.id.replace('e-', '').replace('path-', '').split('-')[0];
-                    await lineageApi.delete(originalId);
-                    message.success('Deleted');
+                    await lineageApi.delete(dbId);
+                    message.success('Lineage relationship deleted');
                     fetchLineage();
-                } catch (error) { message.error('Failed'); }
+                } catch (error) {
+                    message.error('Failed to delete lineage relationship');
+                }
             }
         });
     }
@@ -421,28 +427,51 @@ const LineageGraphContent: React.FC = () => {
         if (srcN?.type === 'field' && sProxyId === srcN.parent_id) sH = rawSrcId;
         if (tgtN?.type === 'field' && tProxyId === tgtN.parent_id) tH = rawTgtId;
 
-        const edgeKey = `${sProxyId}-${tProxyId}-${sH || ''}-${tH || ''}`;
-        if (!edgeSet.has(edgeKey)) {
-            edgeSet.add(edgeKey);
-            const isRel = isTracing && (highlightedFieldIds.includes(rawSrcId) || highlightedFieldIds.includes(rawTgtId));
-            
-            finalEdges.push({ 
-                id: `e-${edgeKey}`, 
-                source: sProxyId, 
-                target: tProxyId, 
-                sourceHandle: sH, 
-                targetHandle: tH, 
-                label: isRel || !isTracing ? (e.lineage_source?.toUpperCase() || "") : "", 
-                animated: isRel || e.lineage_source === 'inferred', 
-                style: { 
-                    stroke: isRel ? '#1890ff' : '#d9d9d9', 
-                    strokeWidth: isRel ? 3 : (sH || tH ? 1 : 2), 
-                    opacity: isTracing && !isRel ? 0.2 : 1 
-                }, 
-                markerEnd: { type: MarkerType.ArrowClosed, color: isRel ? '#1890ff' : '#d9d9d9' } 
+                const edgeKey = `${sProxyId}-${tProxyId}-${sH || ''}-${tH || ''}`;
+
+                if (!edgeSet.has(edgeKey)) {
+
+                    edgeSet.add(edgeKey);
+
+                    const isRel = isTracing && (highlightedFieldIds.includes(rawSrcId) || highlightedFieldIds.includes(rawTgtId));
+
+                    
+
+                    finalEdges.push({ 
+
+                        id: `e-${edgeKey}`, 
+
+                        source: sProxyId, 
+
+                        target: tProxyId, 
+
+                        sourceHandle: sH, 
+
+                        targetHandle: tH, 
+
+                        data: { dbId: e.id }, // CRITICAL: Store the real database ID
+
+                        label: isRel || !isTracing ? (e.lineage_source?.toUpperCase() || "") : "", 
+
+                        animated: isRel || e.lineage_source === 'inferred', 
+
+                        style: { 
+
+                            stroke: isRel ? '#1890ff' : '#d9d9d9', 
+
+                            strokeWidth: isRel ? 3 : (sH || tH ? 1 : 2), 
+
+                            opacity: isTracing && !isRel ? 0.2 : 1 
+
+                        }, 
+
+                        markerEnd: { type: MarkerType.ArrowClosed, color: isRel ? '#1890ff' : '#d9d9d9' } 
+
+                    });
+
+                }
+
             });
-        }
-    });
 
     const layouted = getLayoutedElements(flowNodes, finalEdges, 'LR');
     setNodes(layouted as any);

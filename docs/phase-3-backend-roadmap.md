@@ -3,46 +3,28 @@
 **Agent**: Backend Agent (Codex)
 **Phase Duration**: Week 9-12 (4 weeks)
 **Status**: 🔴 Not Started
-**Last Updated**: 2025-12-25
+**Last Updated**: 2025-12-26
 
 ---
 
-## Week 9: Graph Traversal Algorithms
+## Scope Changes
 
-### Day 1-2: Multi-hop Traversal Implementation
+### Removed Features
+- ❌ Multi-hop traversal (already in Phase 2 with depth 1-5)
+- ❌ Approval workflow (deferred)
+- ❌ Confidence scoring (over-engineering)
 
-**Task 1.1: Upstream Traversal API**
-```python
-# Endpoint: GET /api/v1/lineage/table/{id}/upstream?depth=3&include_fields=true
-# Response: Nested graph structure with all upstream dependencies
-```
-
-**Deliverables**:
-- [ ] Implement configurable depth traversal (1-10 hops)
-- [ ] Support field-level traversal option
-- [ ] Add filtering by lineage source (manual/inferred/approved)
-- [ ] Return graph in both tree and flat formats
-
-**Neo4j Query Example**:
-```cypher
-MATCH path = (target:Table {id: $tableId})<-[:FEEDS_INTO*1..3]-(source:Table)
-WHERE ALL(r IN relationships(path) WHERE r.lineageSource IN $sources)
-RETURN path
-```
-
-**Task 1.2: Downstream Traversal API**
-```python
-# Endpoint: GET /api/v1/lineage/table/{id}/downstream?depth=3
-```
-
-**Deliverables**:
-- [ ] Mirror upstream traversal functionality
-- [ ] Add impact scope metrics (total affected tables/fields)
-- [ ] Support pagination for large result sets
+### Focus Areas
+- ✅ Path finding between nodes
+- ✅ Impact analysis
+- ✅ Root cause analysis
+- ✅ Performance optimization
 
 ---
 
-### Day 3-4: Bidirectional & Path Finding
+## Week 9: Path Finding & Analysis
+
+### Day 1-2: Find All Paths Between Nodes
 
 **Task 2.1: Find All Paths Between Nodes**
 ```python
@@ -63,20 +45,38 @@ MATCH path = allShortestPaths(
 RETURN path
 ```
 
-**Task 2.2: Graph Filtering**
+**Task 1.2: Graph Filtering**
 
 **Deliverables**:
 - [ ] Filter by source type (oracle/mongodb/elasticsearch)
-- [ ] Filter by confidence threshold
-- [ ] Filter by approval status
+- [ ] Filter by lineage source (manual/inferred)
 - [ ] Filter by date range
+
+### Day 3-4: Circular Dependency Detection
+
+**Task 1.3: Cycle Detection API**
+```python
+# Endpoint: GET /api/v1/lineage/cycles?table_id={id}
+```
+
+**Deliverables**:
+- [ ] Detect cycles in lineage graph
+- [ ] Report all cycle paths
+- [ ] Calculate cycle length
+
+**Neo4j Query**:
+```cypher
+MATCH path = (t:Table)-[:FEEDS_INTO*]->(t)
+WHERE t.id = $tableId OR $tableId IS NULL
+RETURN path
+```
 
 ---
 
 ### Day 5: Testing & Documentation
 
 **Deliverables**:
-- [ ] Unit tests for all traversal functions (coverage ≥ 80%)
+- [ ] Unit tests for path finding (coverage ≥ 80%)
 - [ ] Integration tests with sample graphs
 - [ ] API documentation (OpenAPI spec)
 - [ ] Performance baseline measurements
@@ -87,7 +87,7 @@ RETURN path
 
 ### Day 1-2: Impact Analysis
 
-**Task 3.1: Impact Analysis API**
+**Task 2.1: Impact Analysis API**
 ```python
 # Endpoint: POST /api/v1/lineage/impact
 # Body: { "table_id": "uuid", "change_type": "schema_change|data_quality" }
@@ -95,27 +95,15 @@ RETURN path
 
 **Deliverables**:
 - [ ] Calculate full downstream impact
-- [ ] Categorize impact by severity (direct/indirect)
+- [ ] Categorize impact by distance (direct/indirect)
 - [ ] Estimate affected row counts
 - [ ] Generate impact report
-
-**Algorithm**:
-```python
-def analyze_impact(table_id, change_type):
-    # 1. Get all downstream tables (unlimited depth)
-    # 2. Calculate distance from source
-    # 3. Estimate impact severity based on:
-    #    - Distance (closer = higher impact)
-    #    - Relationship confidence
-    #    - Table importance (row count, usage frequency)
-    # 4. Return ranked list
-```
 
 ---
 
 ### Day 3-4: Root Cause Analysis
 
-**Task 4.1: Root Cause Tracing API**
+**Task 2.2: Root Cause Tracing API**
 ```python
 # Endpoint: POST /api/v1/lineage/root-cause
 # Body: { "table_id": "uuid", "issue_type": "data_quality|missing_data" }
@@ -124,27 +112,13 @@ def analyze_impact(table_id, change_type):
 **Deliverables**:
 - [ ] Trace back to all source tables
 - [ ] Identify critical path (most likely cause)
-- [ ] Highlight low-confidence relationships
 - [ ] Generate investigation checklist
-
-**Task 4.2: Circular Dependency Detection**
-
-**Deliverables**:
-- [ ] Detect cycles in lineage graph
-- [ ] Report cycle paths
-- [ ] Suggest resolution strategies
-
-**Neo4j Query**:
-```cypher
-MATCH path = (t:Table)-[:FEEDS_INTO*]->(t)
-RETURN path
-```
 
 ---
 
 ### Day 5: Metrics & Reporting
 
-**Task 5.1: Dependency Metrics**
+**Task 2.3: Dependency Metrics**
 
 **Deliverables**:
 - [ ] Calculate in-degree (number of upstream dependencies)
@@ -169,8 +143,7 @@ RETURN path
 **Indexes to Create**:
 ```cypher
 CREATE INDEX table_id_source FOR (t:Table) ON (t.id, t.source);
-CREATE INDEX lineage_source_confidence FOR ()-[r:FEEDS_INTO]-()
-  ON (r.lineageSource, r.confidence);
+CREATE INDEX lineage_source FOR ()-[r:FEEDS_INTO]-() ON (r.lineageSource);
 ```
 
 **Task 6.2: Query Plan Analysis**
@@ -221,123 +194,66 @@ CREATE INDEX lineage_source_confidence FOR ()-[r:FEEDS_INTO]-()
 - [ ] Generate performance report
 
 **Performance Targets**:
-- 3-hop query: < 500ms (P95)
-- 5-hop query: < 1s (P95)
+- Path finding: < 1s (P95)
 - Impact analysis (100 nodes): < 1s
 - Cache hit rate: > 80%
 
 ---
 
-## Week 12: Workflow & Scoring
+## Week 12: Integration & Testing
 
-### Day 1-2: Approval Workflow
+### Day 1-2: API Integration
 
-**Task 9.1: Workflow State Machine**
-
-**States**: `draft` → `submitted` → `under_review` → `approved`/`rejected`
+**Task 4.1: Frontend-Backend Integration**
 
 **Deliverables**:
-- [ ] Create `lineage_approvals` table in PostgreSQL
-- [ ] Implement state transition API
-- [ ] Add role-based access control
-- [ ] Create approval history tracking
-
-**Database Schema**:
-```sql
-CREATE TABLE lineage_approvals (
-    id UUID PRIMARY KEY,
-    lineage_id VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    submitted_by VARCHAR(100),
-    submitted_at TIMESTAMP,
-    reviewed_by VARCHAR(100),
-    reviewed_at TIMESTAMP,
-    comments TEXT,
-    CONSTRAINT valid_status CHECK (status IN
-      ('draft', 'submitted', 'under_review', 'approved', 'rejected'))
-);
-```
-
-**Task 9.2: Approval API**
-
-**Endpoints**:
-```python
-POST   /api/v1/lineage/{id}/submit
-POST   /api/v1/lineage/{id}/approve
-POST   /api/v1/lineage/{id}/reject
-GET    /api/v1/lineage/pending-approvals
-```
+- [ ] Coordinate with Frontend Agent on API contracts
+- [ ] Test all new endpoints
+- [ ] Fix integration issues
+- [ ] Update OpenAPI documentation
 
 ---
 
-### Day 3-4: Confidence Scoring
+### Day 3-4: End-to-End Testing
 
-**Task 10.1: Scoring Algorithm**
-
-**Deliverables**:
-- [ ] Implement confidence calculation
-- [ ] Update confidence on lineage changes
-- [ ] Add confidence decay over time
-- [ ] Display confidence in API responses
-
-**Scoring Factors**:
-```python
-confidence = (
-    source_weight * 0.4 +      # manual=1.0, inferred=0.5
-    approval_weight * 0.3 +     # approved=1.0, not_approved=0.7
-    freshness_weight * 0.2 +    # decay over time
-    usage_weight * 0.1          # based on query frequency
-)
-```
-
-**Task 10.2: Quality Metrics**
+**Task 4.2: Integration Testing**
 
 **Deliverables**:
-- [ ] Calculate lineage completeness (% of tables with lineage)
-- [ ] Calculate approval rate
-- [ ] Calculate average confidence score
-- [ ] Generate quality dashboard data
-
----
-
-### Day 5: Integration & Testing
-
-**Task 11.1: End-to-End Testing**
-
-**Deliverables**:
-- [ ] Integration tests for all workflows
-- [ ] Test approval workflow with multiple roles
-- [ ] Test confidence score updates
+- [ ] Integration tests for all new APIs
+- [ ] Test path finding with complex graphs
+- [ ] Test impact analysis accuracy
 - [ ] Performance regression tests
 
-**Task 11.2: Documentation**
+---
+
+### Day 5: Documentation & Handoff
+
+**Task 4.3: Documentation**
 
 **Deliverables**:
 - [ ] API documentation complete
 - [ ] Algorithm documentation
 - [ ] Deployment guide updates
-- [ ] User guide for approval workflow
+- [ ] Handoff to QC Agent
 
 ---
 
 ## Deliverables Summary
 
-### APIs (12 new endpoints)
-- ✅ Multi-hop traversal (upstream/downstream)
-- ✅ Path finding & shortest path
+### APIs (6 new endpoints)
+- ✅ Find all paths between nodes
+- ✅ Shortest path
+- ✅ Circular dependency detection
 - ✅ Impact analysis
 - ✅ Root cause analysis
-- ✅ Circular dependency detection
-- ✅ Approval workflow (submit/approve/reject)
-- ✅ Pending approvals list
+- ✅ Dependency metrics
 
 ### Database Changes
-- ✅ `lineage_approvals` table
 - ✅ Neo4j indexes optimization
 - ✅ Redis cache configuration
 
 ### Performance Improvements
-- ✅ Query optimization (3-hop < 500ms)
+- ✅ Query optimization (<1s for path finding)
 - ✅ Caching layer (>80% hit rate)
 - ✅ Pagination support
 
@@ -357,8 +273,7 @@ confidence = (
 
 ### Potential Blockers
 - Neo4j performance issues → Mitigation: Early benchmarking
-- Complex approval workflow → Mitigation: Start simple, iterate
-- Cache invalidation bugs → Mitigation: Comprehensive testing
+- Complex path finding algorithms → Mitigation: Use APOC library
 
 ---
 

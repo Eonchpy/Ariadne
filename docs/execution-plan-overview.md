@@ -454,31 +454,28 @@ Week 20-22 | Phase 6: Integration, Optimization & Deployment     | All Agents Co
 
 ### Phase 3: Lineage Engine Enhancement (Week 9-12) ⚠️ Critical Path
 
-**Objective**: Enhance lineage graph capabilities with advanced queries and analysis
+**Objective**: Enhance lineage graph capabilities with business impact analysis and data quality detection
 
 **Key Milestones**:
-- Graph traversal algorithms (upstream/downstream, multi-hop)
-- Impact analysis and root cause analysis
-- Advanced lineage queries with filtering
-- Performance optimization (1000+ node graphs, < 500ms for 3-hop queries)
-- Lineage approval workflow
-- Lineage confidence scoring
+- Blast Radius calculation (business domain impact assessment)
+- Cycle Detection MVP (single table circular dependency detection)
+- Performance optimization (Neo4j indexes, Redis caching)
+- Graph rendering optimization (1000+ node graphs, < 500ms for 3-hop queries)
 
-### Phase 4: AI Integration (Week 13-15) ⚠️ Critical Path
+### Phase 4: AI-Powered Lineage Assistant (Week 13-15) ⚠️ Critical Path
 
-**Objective**: Implement AI intelligent assistant with RAG
+**Objective**: Implement intelligent lineage assistant with AI capabilities
 
 **Key Milestones**:
-- Vector embedding generation and storage (pgvector)
-- RAG pipeline implementation (LangChain)
-- Natural language query interface
-- AI chat interface with conversation history
-- Semantic search for metadata
-- Lineage explanation generation
+- Natural language lineage queries
+- Intelligent impact analysis and recommendations
+- Automated pattern recognition
+- Conversational lineage exploration
+- Semantic metadata search
 
-### Phase 5: Metadata Extraction & Auto-Sync (Week 16-19)
+### Phase 5: Metadata Extraction & Data Quality Platform (Week 16-19)
 
-**Objective**: Implement automated metadata extraction from data sources
+**Objective**: Implement automated metadata extraction and global data quality monitoring
 
 **Key Milestones**:
 - Oracle metadata extraction (system catalogs: ALL_TABLES, ALL_TAB_COLUMNS)
@@ -488,6 +485,11 @@ Week 20-22 | Phase 6: Integration, Optimization & Deployment     | All Agents Co
 - Incremental sync and change detection
 - Permission handling and error recovery
 - "Inferred" lineage generation from metadata patterns
+- **Global data quality dashboard**:
+  - Global cycle detection and reporting
+  - Orphaned table detection
+  - Over-dependency analysis
+  - Scheduled quality scans with alerting
 
 ### Phase 6: Integration, Optimization & Deployment (Week 20-22)
 

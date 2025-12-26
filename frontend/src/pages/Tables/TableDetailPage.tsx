@@ -6,8 +6,11 @@ import { tablesApi } from '@/api/endpoints/tables';
 import { lineageApi } from '@/api/endpoints/lineage';
 import { tagsApi } from '@/api/endpoints/tags';
 import { useDataSourceStore } from '@/stores/dataSourceStore';
+import client from '@/api/client';
 import type { TableDetail } from '@/types/api';
 import BlastRadius from '@/components/analysis/BlastRadius';
+import QualityCheck from '@/components/analysis/QualityCheck';
+import { Badge } from 'antd';
 
 const { Title, Text } = Typography;
 
@@ -19,14 +22,23 @@ const TableDetailPage: React.FC = () => {
   const [tableTags, setTableTags] = useState<any[]>([]);
   const [lineage, setLineage] = useState<{ upstream: any[], downstream: any[] }>({ upstream: [], downstream: [] });
   const [loading, setLoading] = useState(false);
+  const [hasQualityIssues, setHasQualityIssues] = useState(false);
 
   useEffect(() => {
     fetchSources();
     if (id) {
       loadTable(id);
       loadLineage(id);
+      checkQuality(id);
     }
   }, [id, fetchSources]);
+
+  const checkQuality = async (tableId: string) => {
+    try {
+      const response = await client.get<any, any>(`/lineage/analysis/quality-check/${tableId}`);
+      setHasQualityIssues(response.has_cycles);
+    } catch (e) { /* ignore quality badge errors */ }
+  };
 
   const loadTable = async (tableId: string) => {
     setLoading(true);
@@ -209,6 +221,20 @@ const TableDetailPage: React.FC = () => {
               children: (
                 <div style={{ padding: '8px 0' }}>
                   <BlastRadius tableId={table.id} />
+                </div>
+              )
+            },
+            {
+              key: 'quality',
+              label: (
+                <Space>
+                  Quality Check
+                  {hasQualityIssues && <Badge dot status="error" />}
+                </Space>
+              ),
+              children: (
+                <div style={{ padding: '8px 0' }}>
+                  <QualityCheck tableId={table.id} />
                 </div>
               )
             }

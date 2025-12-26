@@ -837,6 +837,28 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /lineage/analysis/quality-check/{table_id}:
+    get:
+      tags: [lineage]
+      summary: Data quality check (cycle detection)
+      parameters:
+        - in: path
+          name: table_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: depth
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+      responses:
+        '200':
+          description: Cycle detection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityCheckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /bulk/import:
     post:
       tags: [import_export]
@@ -2018,6 +2040,29 @@ components:
           type: object
           additionalProperties:
             type: integer
+
+    QualityCheckNode:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        primary_tag_path: { type: string }
+        source_name: { type: string }
+        type: { type: string, enum: [table, field] }
+
+    QualityCheckResponse:
+      type: object
+      properties:
+        has_cycles: { type: boolean }
+        cycles:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/QualityCheckNode'
+        severity_level: { type: string, enum: [high, low] }
+        issue_count: { type: integer }
+        audit_timestamp: { type: string, format: date-time }
 
     BulkImportResponse:
       type: object
