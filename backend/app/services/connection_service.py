@@ -54,6 +54,8 @@ class ConnectionService:
                 result = await self._test_mongodb(start)
             elif self.source_type == SourceType.elasticsearch:
                 result = await self._test_elasticsearch(start)
+            elif self.source_type == SourceType.mysql:
+                result = await self._test_mysql(start)
             else:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported source type")
             await self._log(source_id, "connection_test", tested_by, "success", None, table_name=None)
@@ -114,19 +116,29 @@ class ConnectionService:
 
     async def _test_mongodb(self, start: float) -> ConnectionTestResult:
         try:
-            from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
+            import pymongo  # type: ignore
         except ImportError as exc:  # pragma: no cover
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="pymongo/motor not installed") from exc
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="pymongo not installed") from exc
 
         uri = self.config.get("uri")
         if not uri:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing MongoDB uri")
 
-        client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=3000)
+        def _ping():
+            client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=3000, connectTimeoutMS=3000)
+            try:
+                client.admin.command("ping")
+            finally:
+                client.close()
+
         try:
-            await client.admin.command("ping")
-        finally:
-            client.close()
+            await asyncio.to_thread(_ping)
+        except Exception as exc:
+            detail = str(exc)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"MongoDB connection failed: {detail}",
+            ) from exc
         latency = (time.perf_counter() - start) * 1000
         return ConnectionTestResult(success=True, message="Connection successful", latency_ms=latency)
 
@@ -140,10 +152,74 @@ class ConnectionService:
         if not hosts:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Elasticsearch hosts")
 
-        es = AsyncElasticsearch(hosts=hosts)
+        username = self.config.get("username")
+        password = self.config.get("password")
+
+        def _embed_auth(h: str) -> str:
+            if not username and not password:
+                return h
+            # if already contains scheme but no auth, inject it
+            if "@" in h:
+                return h
+            if h.startswith("http://"):
+                return f"http://{username}:{password}@{h[len('http://'):]}"
+            if h.startswith("https://"):
+                return f"https://{username}:{password}@{h[len('https://'):]}"
+            # default to http
+            return f"http://{username}:{password}@{h}"
+
+        if isinstance(hosts, str):
+            hosts_with_auth = _embed_auth(hosts)
+        else:
+            hosts_with_auth = [_embed_auth(h) for h in hosts]
+
+        es_kwargs = {
+            "hosts": hosts_with_auth,
+            "basic_auth": (username, password) if username or password else None,
+            "api_key": self.config.get("api_key"),
+            "verify_certs": bool(self.config.get("use_ssl", False)),
+            "ssl_show_warn": False,
+        }
+
+        es = AsyncElasticsearch(**es_kwargs)
         try:
             await es.info()
         finally:
             await es.close()
+        latency = (time.perf_counter() - start) * 1000
+        return ConnectionTestResult(success=True, message="Connection successful", latency_ms=latency)
+
+    async def _test_mysql(self, start: float) -> ConnectionTestResult:
+        try:
+            import aiomysql  # type: ignore
+        except ImportError as exc:  # pragma: no cover
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="aiomysql not installed") from exc
+
+        host = self.config.get("host")
+        port = int(self.config.get("port") or 3306)
+        user = self.config.get("username")
+        password = self.config.get("password")
+        database = self.config.get("database")
+        use_ssl = bool(self.config.get("use_ssl", False))
+
+        if not host or not user or password is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing MySQL connection fields (host, username, password)")
+
+        conn = await aiomysql.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            db=database,
+            ssl=None if not use_ssl else {},
+            connect_timeout=3,
+        )
+        try:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT 1")
+                await cur.fetchone()
+        finally:
+            conn.close()
+
         latency = (time.perf_counter() - start) * 1000
         return ConnectionTestResult(success=True, message="Connection successful", latency_ms=latency)

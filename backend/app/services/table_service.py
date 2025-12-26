@@ -3,6 +3,7 @@ from typing import Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 
 from app.models.table import MetadataTable
@@ -69,6 +70,7 @@ class TableService:
             id=uuid.uuid4(),
             source_id=payload.source_id,
             name=payload.name,
+            name_normalized=payload.name.lower() if payload.name else None,
             type=payload.type,
             description=payload.description,
             tags=payload.tags,
@@ -76,8 +78,15 @@ class TableService:
             qualified_name=payload.qualified_name,
             primary_tag_id=primary_tag_uuid,
         )
-        await self.repo.add(table)
-        await self.session.commit()
+        try:
+            await self.repo.add(table)
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Table name already exists under this data source",
+            ) from exc
 
         if tag_uuid_list:
             await self.tag_repo.add_table_tags(table.id, tag_uuid_list)
@@ -111,6 +120,8 @@ class TableService:
 
         for key, value in updates.items():
             setattr(table, key, value)
+            if key == "name" and value:
+                table.name_normalized = value.lower()
 
         if tag_ids is not None:
             await self.tag_repo.remove_all_tags_for_table(table.id)
@@ -124,7 +135,14 @@ class TableService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="primary_tag_id must be in table tags")
             table.primary_tag_id = uuid.UUID(primary_tag_id)
 
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Table name already exists under this data source",
+            ) from exc
         await self.session.refresh(table)
         if self.lineage_driver:
             await LineageService(self.lineage_driver).sync_table_node(

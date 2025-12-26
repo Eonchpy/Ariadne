@@ -30,6 +30,8 @@ class IntrospectionService:
             return await self._mongodb_collection(table_name)
         if self.source_type == SourceType.elasticsearch:
             return await self._elasticsearch_index(table_name)
+        if self.source_type == SourceType.mysql:
+            return await self._mysql_table(table_name, schema_name)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported source type")
 
     async def _oracle_table(self, table_name: str, schema_name: str | None) -> TableDetail:
@@ -104,21 +106,25 @@ class IntrospectionService:
 
     async def _mongodb_collection(self, collection_name: str) -> TableDetail:
         try:
-            from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
+            import pymongo  # type: ignore
         except ImportError as exc:  # pragma: no cover
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="pymongo/motor not installed") from exc
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="pymongo not installed") from exc
 
         uri = self.config.get("uri")
         db_name = self.config.get("database")
         if not uri or not db_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Mongo uri or database")
 
-        client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=3000)
-        db = client[db_name]
-        coll = db[collection_name]
-        # Sample one document to infer fields
-        doc = await coll.find_one()
-        client.close()
+        def _sample():
+            client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=3000, connectTimeoutMS=3000)
+            try:
+                db = client[db_name]
+                coll = db[collection_name]
+                return coll.find_one()
+            finally:
+                client.close()
+
+        doc = await asyncio.to_thread(_sample)
 
         fields = []
         if doc:
@@ -154,7 +160,34 @@ class IntrospectionService:
         if not hosts:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Elasticsearch hosts")
 
-        es = AsyncElasticsearch(hosts=hosts)
+        username = self.config.get("username")
+        password = self.config.get("password")
+        api_key = self.config.get("api_key")
+        use_ssl = bool(self.config.get("use_ssl", False))
+
+        def _embed_auth(h: str) -> str:
+            if not username and not password:
+                return h
+            if "@" in h:
+                return h
+            if h.startswith("http://"):
+                return f"http://{username}:{password}@{h[len('http://'):]}"
+            if h.startswith("https://"):
+                return f"https://{username}:{password}@{h[len('https://'):]}"
+            return f"http://{username}:{password}@{h}"
+
+        if isinstance(hosts, str):
+            hosts_with_auth = _embed_auth(hosts)
+        else:
+            hosts_with_auth = [_embed_auth(h) for h in hosts]
+
+        es = AsyncElasticsearch(
+            hosts=hosts_with_auth,
+            basic_auth=(username, password) if username or password else None,
+            api_key=api_key,
+            verify_certs=use_ssl,
+            ssl_show_warn=False,
+        )
         try:
             mapping = await es.indices.get_mapping(index=index_name)
         finally:
@@ -182,5 +215,67 @@ class IntrospectionService:
             name=index_name,
             schema_name=None,
             qualified_name=index_name,
+            fields=fields,
+        )
+
+    async def _mysql_table(self, table_name: str, schema_name: str | None) -> TableDetail:
+        try:
+            import aiomysql  # type: ignore
+        except ImportError as exc:  # pragma: no cover
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="aiomysql not installed") from exc
+
+        host = self.config.get("host")
+        port = int(self.config.get("port") or 3306)
+        user = self.config.get("username")
+        password = self.config.get("password")
+        database = schema_name or self.config.get("database")
+
+        if not host or not user or password is None or not database:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing MySQL connection fields (host, username, password, database)")
+
+        conn = await aiomysql.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            db=database,
+            connect_timeout=3,
+        )
+        try:
+            async with conn.cursor() as cur:
+                # columns
+                await cur.execute(
+                    """
+                    SELECT column_name, data_type, column_type, is_nullable, column_key
+                    FROM information_schema.columns
+                    WHERE table_schema=%s AND table_name=%s
+                    ORDER BY ordinal_position
+                    """,
+                    (database, table_name),
+                )
+                cols = await cur.fetchall()
+
+            fields = []
+            for name, data_type, column_type, is_nullable, column_key in cols:
+                dtype = column_type or data_type
+                fields.append(
+                    Field(
+                        id="",
+                        table_id="",
+                        name=name,
+                        data_type=dtype,
+                        is_nullable=is_nullable == "YES",
+                        is_primary_key=column_key == "PRI",
+                    )
+                )
+        finally:
+            conn.close()
+
+        return TableDetail(
+            id="",
+            source_id="",
+            name=table_name,
+            schema_name=database,
+            qualified_name=f"{database}.{table_name}",
             fields=fields,
         )

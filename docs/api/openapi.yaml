@@ -1236,7 +1236,7 @@ components:
 
     SourceType:
       type: string
-      enum: [oracle, mongodb, elasticsearch, other]
+      enum: [oracle, mongodb, elasticsearch, mysql, other]
     Source:
       type: object
       properties:

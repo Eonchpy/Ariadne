@@ -14,6 +14,7 @@ class MetadataTable(TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)

@@ -9,6 +9,7 @@ class SourceType(str, Enum):
     oracle = "oracle"
     mongodb = "mongodb"
     elasticsearch = "elasticsearch"
+    mysql = "mysql"
     other = "other"
 
 
