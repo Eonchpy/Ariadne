@@ -137,3 +137,13 @@ WHERE $table_id IS NULL OR t.id = $table_id
 CALL apoc.algo.allSimplePaths(t, t, 'FEEDS_INTO>', $max_depth) YIELD path
 RETURN path
 """
+
+QUALITY_CHECK_CYCLES = """
+// Cycles starting and ending at the focal table, following lineage relationships (both directions)
+MATCH (root {id: $table_id})
+MATCH path = (root)-[:FEEDS_INTO|DERIVES_FROM*1..20]-(root)
+WHERE length(path) <= $max_depth
+  AND size(nodes(path)) > 1
+  AND size(apoc.coll.toSet(nodes(path))) = size(nodes(path)) - 1
+RETURN path
+"""
