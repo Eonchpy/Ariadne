@@ -106,6 +106,8 @@ export interface Table {
   type: string;
   description?: string | null;
   tags?: string[];
+  primary_tag_id?: string | null;
+  primary_tag_name?: string | null;
   row_count?: number | null;
   field_count?: number;
   created_at: string;
@@ -114,6 +116,12 @@ export interface Table {
 
 export interface TableDetail extends Table {
   fields: Field[];
+  primary_tag?: {
+    id: string;
+    name: string;
+    path: string;
+    level: number;
+  } | null;
 }
 
 export interface TableListResponse {
@@ -169,9 +177,13 @@ export interface LineageGraphNode {
 
 export interface LineageGraphEdge {
   id: string;
-  from: string;
-  to: string;
-  lineage_source: 'manual' | 'approved' | 'inferred';
+  from?: string;
+  to?: string;
+  source_id?: string;
+  target_id?: string;
+  label?: string;
+  type: string;
+  lineage_source: string;
 }
 
 export interface LineageGraphResponse {

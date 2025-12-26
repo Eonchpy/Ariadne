@@ -51,6 +51,9 @@ class LineageGraphNode(BaseModel):
     source_id: Optional[str] = None
     parent_id: Optional[str] = None
     ordinal_position: Optional[int] = None
+    primary_tag: Optional[dict[str, Any]] = None
+    distance: Optional[int] = None
+    source_name: Optional[str] = None
 
 
 class LineageGraphEdge(BaseModel):
@@ -75,3 +78,32 @@ class LineageGraphResponse(BaseModel):
     @classmethod
     def default_empty(cls, v):
         return v or []
+
+
+class TracePathItem(BaseModel):
+    table_id: str
+    table_name: Optional[str] = None
+    field_id: str
+    field_name: Optional[str] = None
+    distance: int
+    primary_tag_path: Optional[str] = None
+    source_name: Optional[str] = None
+
+
+class TracePath(BaseModel):
+    upstream: list[TracePathItem] = Field(default_factory=list)
+    downstream: list[TracePathItem] = Field(default_factory=list)
+
+
+class FieldRef(BaseModel):
+    id: str
+    name: Optional[str] = None
+    table_id: str
+    table_name: Optional[str] = None
+
+
+class FieldTraceResponse(BaseModel):
+    field: FieldRef
+    trace_path: TracePath
+    involved_tables: list[str] = Field(default_factory=list)
+    involved_fields: list[str] = Field(default_factory=list)

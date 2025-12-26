@@ -5,6 +5,20 @@ const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const lineageApi = {
+  getGraph: async (params: { table_id: string; direction: string; depth?: number }) => {
+    if (USE_MOCKS) {
+      await sleep(600);
+      return {
+        root_id: params.table_id,
+        nodes: [
+          { id: params.table_id, label: 'Table', type: 'table' },
+        ],
+        edges: []
+      } as LineageGraphResponse;
+    }
+    return client.get<any, LineageGraphResponse>('/lineage/graph', { params });
+  },
+
   getUpstream: async (tableId: string, depth: number = 3, granularity: string = 'table') => {
     if (USE_MOCKS) {
       await sleep(600);

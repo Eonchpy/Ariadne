@@ -3,13 +3,16 @@ import { Form, Input, Button, Select, Checkbox, Card, Space, message, Typography
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeftOutlined, SaveOutlined, CloudDownloadOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, CloudDownloadOutlined, DeleteOutlined, PlusOutlined, StarFilled } from '@ant-design/icons';
 import { tableFormSchema } from '@/utils/validation';
 import type { TableFormData } from '@/utils/validation';
 import { tablesApi } from '@/api/endpoints/tables';
 import { tagsApi } from '@/api/endpoints/tags';
 import { useDataSourceStore } from '@/stores/dataSourceStore';
 import TagSelect from '@/components/TagSelect/TagSelect';
+import PrimaryTagSelect from '@/components/TagSelect/PrimaryTagSelect';
+import { Tooltip } from 'antd';
+import type { Tag } from '@/types/tag';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -20,6 +23,7 @@ const TableForm: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const isEditMode = !!id;
   const { sources, fetchSources } = useDataSourceStore();
+  const [flatTags, setFlatTags] = useState<Tag[]>([]);
   
   const [fetchingColumns, setFetchingColumns] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -34,6 +38,7 @@ const TableForm: React.FC = () => {
       schema_name: '',
       fields: [],
       tags: [],
+      primary_tag_id: null,
     },
   });
 
@@ -43,13 +48,29 @@ const TableForm: React.FC = () => {
   });
 
   const selectedSourceId = watch('source_id');
+  const selectedTagIds = watch('tags');
+
+  const fetchFullTags = async () => {
+    try {
+      const response = await tagsApi.list();
+      const flatten = (items: Tag[]): Tag[] => {
+        return items.reduce((acc: Tag[], item) => {
+          return acc.concat([item], item.children ? flatten(item.children) : []);
+        }, []);
+      };
+      setFlatTags(flatten(response.items));
+    } catch (e) {
+      console.error('Failed to fetch flat tags');
+    }
+  };
 
   useEffect(() => {
     fetchSources();
+    fetchFullTags();
     if (isEditMode && id) {
       loadTable(id);
     }
-  }, [id, isEditMode]);
+  }, [id, isEditMode, fetchSources]);
 
   const loadTable = async (tableId: string) => {
     try {
@@ -63,8 +84,10 @@ const TableForm: React.FC = () => {
         description: data.description || '',
         source_id: data.source_id,
         schema_name: data.schema_name || '',
-        tags: tagsData.items.map(t => t.id),
-        fields: data.fields.map(f => ({
+        primary_tag_id: data.primary_tag_id,
+        // Load all tags into state to maintain data integrity
+        tags: (tagsData.items || []).map(t => t.id),
+        fields: (data.fields || []).map(f => ({
           name: f.name,
           data_type: f.data_type,
           description: f.description || '',
@@ -81,10 +104,15 @@ const TableForm: React.FC = () => {
   const onSubmit = async (data: TableFormData) => {
     setSubmitting(true);
     try {
-      const { fields, tags, ...tableData } = data;
+      const { fields, tags, primary_tag_id, ...tableData } = data;
 
-      // --- AUTO-TAGGING LOGIC ---
+      // Ensure primary tag is in the tags list
       const finalTagIds = [...(tags || [])];
+      if (primary_tag_id && !finalTagIds.includes(primary_tag_id)) {
+        finalTagIds.push(primary_tag_id);
+      }
+
+      // --- AUTO-TAGGING LOGIC (System Tag) ---
       const selectedSource = sources.find(s => s.id === tableData.source_id);
       
       if (selectedSource) {
@@ -113,12 +141,17 @@ const TableForm: React.FC = () => {
       }
       // ---------------------------
 
+      const payload = {
+        ...tableData,
+        primary_tag_id: primary_tag_id || null
+      };
+
       if (isEditMode && id) {
-        await tablesApi.update(id, tableData);
+        await tablesApi.update(id, payload);
         await tagsApi.addTableTags(id, finalTagIds);
         message.success('Table updated');
       } else {
-        const table = await tablesApi.create(tableData);
+        const table = await tablesApi.create(payload);
         if (fields.length > 0) {
           await tablesApi.batchCreateFields(table.id, fields);
         }
@@ -214,15 +247,57 @@ const TableForm: React.FC = () => {
               </Form.Item>
             </div>
 
-            <Form.Item label="Tags">
-              <Controller
-                name="tags"
-                control={control}
-                render={({ field }) => (
-                  <TagSelect {...field} placeholder="Select business tags" />
-                )}
-              />
-            </Form.Item>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Form.Item 
+                label={
+                  <Space>
+                    Primary Business Domain
+                    <Tooltip title="This tag determines how the table is grouped in the blood lineage graph">
+                      <StarFilled style={{ color: '#faad14' }} />
+                    </Tooltip>
+                  </Space>
+                }
+                required
+                validateStatus={errors.primary_tag_id ? 'error' : ''}
+                help={errors.primary_tag_id?.message as any}
+              >
+                <Controller
+                  name="primary_tag_id"
+                  control={control}
+                  render={({ field }) => (
+                    <PrimaryTagSelect 
+                      {...field} 
+                      selectedTagIds={selectedTagIds || []} 
+                      availableTags={flatTags}
+                    />
+                  )}
+                />
+              </Form.Item>
+
+              <Form.Item label="Additional Business Tags">
+                <Controller
+                  name="tags"
+                  control={control}
+                  render={({ field }) => (
+                    <TagSelect 
+                      {...field} 
+                      value={(field.value || []).filter(id => {
+                        const tag = flatTags.find(t => t.id === id);
+                        return !tag?.path?.startsWith('DataSource');
+                      })}
+                      onChange={(newIds) => {
+                        const systemIds = (field.value || []).filter(id => {
+                          const tag = flatTags.find(t => t.id === id);
+                          return tag?.path?.startsWith('DataSource');
+                        });
+                        field.onChange([...newIds, ...systemIds]);
+                      }}
+                      placeholder="Assign more business tags" 
+                    />
+                  )}
+                />
+              </Form.Item>
+            </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 16, alignItems: 'center' }}>
               <Form.Item label="Schema Name (Optional)">

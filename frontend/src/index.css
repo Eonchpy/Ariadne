@@ -9,3 +9,13 @@ body {
 #root {
   height: 100%;
 }
+
+@keyframes node-glow-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.7); border-color: #1890ff; }
+  70% { box-shadow: 0 0 0 20px rgba(24, 144, 255, 0); border-color: #1890ff; }
+  100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0); }
+}
+
+.highlight-new-node {
+  animation: node-glow-pulse 2s ease-out 3;
+}

@@ -37,6 +37,9 @@ class TagRepository(BaseRepository[Tag]):
         stmt = stmt.on_conflict_do_nothing(index_elements=[TableTag.table_id, TableTag.tag_id])
         await self.session.execute(stmt)
 
+    async def remove_all_tags_for_table(self, table_id: uuid.UUID) -> None:
+        await self.session.execute(TableTag.__table__.delete().where(TableTag.table_id == table_id))
+
     async def remove_table_tag(self, table_id: uuid.UUID, tag_id: uuid.UUID) -> None:
         await self.session.execute(
             TableTag.__table__.delete().where(
@@ -63,4 +66,3 @@ class TagRepository(BaseRepository[Tag]):
         ids = [r[0] for r in rows]
         total = rows[0][1] if rows else 0
         return total, ids
-

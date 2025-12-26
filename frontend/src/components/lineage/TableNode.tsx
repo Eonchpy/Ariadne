@@ -13,6 +13,12 @@ const TableNode = ({ data }: any) => {
   const allFields = data.fields || [];
   const highlightedFieldIds = data.highlightedFields || [];
   
+  // Specific check: Is this table or its fields part of the trace?
+  // isNew should NOT trigger a permanent blue border
+  const isTraced = data.isTraced; 
+  const hasInternalHighlights = allFields.some((f: any) => highlightedFieldIds.includes(f.id));
+  const isHighPriority = isTraced || hasInternalHighlights;
+
   // A field should be visible if it's in the top 10 OR if it's highlighted
   const displayFields = allFields.filter((f: any, idx: number) => 
     idx < 10 || highlightedFieldIds.includes(f.id)
@@ -29,11 +35,12 @@ const TableNode = ({ data }: any) => {
   return (
     <Card 
       size="small" 
+      className={data.isNew ? 'highlight-new-node' : ''}
       style={{ 
         width: 240, 
         borderRadius: 8, 
-        border: highlightedFieldIds.length > 0 ? '2px solid #1890ff' : '1px solid #d9d9d9', 
-        boxShadow: highlightedFieldIds.length > 0 ? '0 0 10px rgba(24, 144, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+        border: isHighPriority ? '2px solid #1890ff' : '1px solid #d9d9d9', 
+        boxShadow: isHighPriority ? '0 0 10px rgba(24, 144, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
         opacity: isDimmed ? 0.4 : 1,
         transition: 'all 0.3s'
       }}
@@ -41,7 +48,7 @@ const TableNode = ({ data }: any) => {
       title={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space>
-            <TableOutlined style={{ color: highlightedFieldIds.length > 0 ? '#1890ff' : 'inherit' }} />
+            <TableOutlined style={{ color: isHighPriority ? '#1890ff' : 'inherit' }} />
             <Text strong style={{ fontSize: '12px' }}>{data.label}</Text>
           </Space>
           <Button 

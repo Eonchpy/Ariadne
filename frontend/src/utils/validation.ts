@@ -68,6 +68,7 @@ export const tableFormSchema = z.object({
   description: z.string().optional(),
   fields: z.array(fieldSchema).min(1, 'At least one field is required'),
   tags: z.array(z.string()),
+  primary_tag_id: z.string().nullable().optional(),
 });
 
 export type TableFormData = z.infer<typeof tableFormSchema>;

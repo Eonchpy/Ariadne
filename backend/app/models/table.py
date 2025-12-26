@@ -21,3 +21,6 @@ class MetadataTable(TimestampMixin, Base):
     field_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     schema_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     qualified_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    primary_tag_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="SET NULL"), nullable=True
+    )

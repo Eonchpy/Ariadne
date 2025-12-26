@@ -59,17 +59,18 @@ const TableDetailPage: React.FC = () => {
 
   const loadLineage = async (tableId: string) => {
     try {
-      const [up, down] = await Promise.all([
-        lineageApi.getUpstream(tableId, 1),
-        lineageApi.getDownstream(tableId, 1)
-      ]);
+      // Call unified API for depth 1 to get immediate neighbors
+      const data = await lineageApi.getGraph({ table_id: tableId, direction: 'both', depth: 1 });
       
+      const upstreamEdges = (data.edges || []).filter(e => (e.to || e.target_id) === tableId);
+      const downstreamEdges = (data.edges || []).filter(e => (e.from || e.source_id) === tableId);
+
       setLineage({ 
-        upstream: up.edges.map(e => ({ ...e, node: up.nodes.find(n => n.id === e.from) })),
-        downstream: down.edges.map(e => ({ ...e, node: down.nodes.find(n => n.id === e.to) }))
+        upstream: upstreamEdges.map(e => ({ ...e, node: data.nodes.find(n => n.id === (e.from || e.source_id)) })),
+        downstream: downstreamEdges.map(e => ({ ...e, node: data.nodes.find(n => n.id === (e.to || e.target_id)) }))
       });
     } catch (e) {
-      console.error('Failed to load direct lineage');
+      console.error('Failed to load direct lineage', e);
     }
   };
 

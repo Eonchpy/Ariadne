@@ -611,6 +611,40 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /lineage/graph:
+    get:
+      tags: [lineage]
+      summary: Get lineage graph for a table
+      parameters:
+        - in: query
+          name: table_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: direction
+          schema:
+            type: string
+            enum: [upstream, downstream, both]
+            default: downstream
+        - in: query
+          name: depth
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+            default: 3
+      responses:
+        '200':
+          description: Lineage graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageGraphResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /lineage/table:
     post:
       tags: [lineage]
@@ -664,6 +698,37 @@ paths:
       responses:
         '204':
           description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/trace/field/{field_id}:
+    get:
+      tags: [lineage]
+      summary: Trace lineage for a field (upstream/downstream)
+      parameters:
+        - $ref: '#/components/parameters/field_id'
+        - in: query
+          name: direction
+          schema:
+            type: string
+            enum: [upstream, downstream, both]
+            default: both
+        - in: query
+          name: depth
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+            default: 5
+      responses:
+        '200':
+          description: Field trace paths
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldTraceResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -1278,10 +1343,21 @@ components:
           example: table
         description:
           type: string
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         tags:
           type: array
           items:
             type: string
+        primary_tag_id:
+          type: string
+          format: uuid
+          nullable: true
+        primary_tag:
+          $ref: '#/components/schemas/TagSummary'
         row_count:
           type: integer
         field_count:
@@ -1317,6 +1393,15 @@ components:
           type: array
           items:
             type: string
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        primary_tag_id:
+          type: string
+          format: uuid
+          nullable: true
     TableUpdateRequest:
       type: object
       properties:
@@ -1330,6 +1415,15 @@ components:
           type: array
           items:
             type: string
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        primary_tag_id:
+          type: string
+          format: uuid
+          nullable: true
     TableListResponse:
       type: object
       properties:
@@ -1570,6 +1664,17 @@ components:
           type: string
           format: uuid
           nullable: true
+        source_name:
+          type: string
+        primary_tag_id:
+          type: string
+          format: uuid
+          nullable: true
+        primary_tag:
+          $ref: '#/components/schemas/TagSummary'
+        distance:
+          type: integer
+          description: Hop count from focus table
     LineageGraphEdge:
       type: object
       properties:
@@ -1582,6 +1687,9 @@ components:
         to:
           type: string
           format: uuid
+        type:
+          type: string
+          enum: [table, field]
         lineage_source:
           $ref: '#/components/schemas/LineageSource'
         confidence:
@@ -1604,6 +1712,70 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LineageGraphEdge'
+
+    TracePathItem:
+      type: object
+      properties:
+        table_id:
+          type: string
+          format: uuid
+        table_name:
+          type: string
+        field_id:
+          type: string
+          format: uuid
+        field_name:
+          type: string
+        distance:
+          type: integer
+        primary_tag_path:
+          type: string
+        source_name:
+          type: string
+
+    TracePath:
+      type: object
+      properties:
+        upstream:
+          type: array
+          items:
+            $ref: '#/components/schemas/TracePathItem'
+        downstream:
+          type: array
+          items:
+            $ref: '#/components/schemas/TracePathItem'
+
+    FieldRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        table_id:
+          type: string
+          format: uuid
+        table_name:
+          type: string
+
+    FieldTraceResponse:
+      type: object
+      properties:
+        field:
+          $ref: '#/components/schemas/FieldRef'
+        trace_path:
+          $ref: '#/components/schemas/TracePath'
+        involved_tables:
+          type: array
+          items:
+            type: string
+            format: uuid
+        involved_fields:
+          type: array
+          items:
+            type: string
+            format: uuid
 
     ImpactAnalysisItem:
       type: object
@@ -1935,6 +2107,19 @@ components:
               source_id:
                 type: string
                 format: uuid
+
+    TagSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        path:
+          type: string
+        level:
+          type: integer
 
     TableTagsAddRequest:
       type: object

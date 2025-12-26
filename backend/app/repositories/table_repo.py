@@ -11,6 +11,61 @@ class TableRepository(BaseRepository[MetadataTable]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, MetadataTable)
 
+    async def get_tables_with_primary_tags(self, table_ids: list[uuid.UUID]) -> dict[str, dict]:
+        """Return mapping of table_id -> {primary_tag, primary_tag_id, source_name, source_id, name}."""
+        if not table_ids:
+            return {}
+
+        from app.models.tag import Tag  # local import to avoid circular
+        from app.models.source import DataSource
+
+        stmt = (
+            select(
+                MetadataTable.id,
+                MetadataTable.name,
+                MetadataTable.primary_tag_id,
+                MetadataTable.source_id,
+                Tag.id,
+                Tag.name,
+                Tag.path,
+                Tag.level,
+                DataSource.name,
+            )
+            .outerjoin(Tag, MetadataTable.primary_tag_id == Tag.id)
+            .outerjoin(DataSource, MetadataTable.source_id == DataSource.id)
+            .where(MetadataTable.id.in_(table_ids))
+        )
+        result = await self.session.execute(stmt)
+        mapping: dict[str, dict] = {}
+        for (
+            table_id,
+            table_name,
+            primary_tag_id,
+            source_id,
+            tag_id,
+            tag_name,
+            tag_path,
+            tag_level,
+            source_name,
+        ) in result.all():
+            primary_tag = None
+            if tag_id:
+                primary_tag = {
+                    "id": str(tag_id),
+                    "name": tag_name,
+                    "path": tag_path,
+                    "level": tag_level,
+                }
+            mapping[str(table_id)] = {
+                "id": str(table_id),
+                "name": table_name,
+                "primary_tag_id": str(primary_tag_id) if primary_tag_id else None,
+                "primary_tag": primary_tag,
+                "source_id": str(source_id) if source_id else None,
+                "source_name": source_name,
+            }
+        return mapping
+
     async def paginate(
         self,
         page: int,

@@ -1,10 +1,16 @@
 import uuid
+from collections import deque
 from typing import Any
 
 from fastapi import HTTPException, status
 from neo4j import AsyncDriver
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.lineage import (
+    FieldTraceResponse,
+    FieldRef,
+    TracePath,
+    TracePathItem,
     LineageGraphResponse,
     LineageGraphNode,
     LineageGraphEdge,
@@ -12,6 +18,8 @@ from app.schemas.lineage import (
     LineageRelationship,
 )
 from app.graph import queries
+from app.repositories.table_repo import TableRepository
+from app.repositories.field_repo import FieldRepository
 import structlog
 
 
@@ -19,8 +27,9 @@ log = structlog.get_logger(__name__)
 
 
 class LineageService:
-    def __init__(self, driver: AsyncDriver):
+    def __init__(self, driver: AsyncDriver, db_session: AsyncSession | None = None):
         self.driver = driver
+        self.db_session = db_session
 
     async def sync_table_node(self, table: dict[str, Any]) -> None:
         async with self.driver.session() as session:
@@ -45,7 +54,6 @@ class LineageService:
 
     async def delete_table_node(self, table_id: str) -> None:
         async with self.driver.session() as session:
-            # delete field nodes of this table first to avoid orphans
             await session.run(queries.DELETE_FIELDS_BY_TABLE, table_id=table_id)
             await session.run(queries.DELETE_TABLE_NODE, id=table_id)
 
@@ -114,20 +122,26 @@ class LineageService:
             confidence=confidence,
         )
 
-    async def get_upstream(self, table_id: str, depth: int, granularity: str = "table") -> LineageGraphResponse:
-        # granularity kept for backward compatibility; we now always return table+field lineage
-        async with self.driver.session() as session:
+    async def get_graph(self, table_id: str, depth: int = 3, direction: str = "downstream") -> LineageGraphResponse:
+        rel_filter = "FEEDS_INTO>"
+        if direction == "upstream":
             rel_filter = "<FEEDS_INTO"
-            result = await session.run(queries.GET_UPSTREAM, table_id=table_id, depth=depth, rel_filter=rel_filter)
+        elif direction == "both":
+            rel_filter = "FEEDS_INTO>|<FEEDS_INTO"
+
+        async with self.driver.session() as session:
+            result = await session.run(queries.GET_GRAPH, table_id=table_id, depth=depth, rel_filter=rel_filter)
             record = await result.single()
-            return self._to_graph(record)
+            if record is None:
+                # Fallback: return the focal table node if it exists in PG even when Neo4j has no entry yet.
+                return await self._root_only_graph(table_id)
+            return await self._to_graph(record)
+
+    async def get_upstream(self, table_id: str, depth: int, granularity: str = "table") -> LineageGraphResponse:
+        return await self.get_graph(table_id, depth=depth, direction="upstream")
 
     async def get_downstream(self, table_id: str, depth: int, granularity: str = "table") -> LineageGraphResponse:
-        async with self.driver.session() as session:
-            rel_filter = "FEEDS_INTO>"
-            result = await session.run(queries.GET_DOWNSTREAM, table_id=table_id, depth=depth, rel_filter=rel_filter)
-            record = await result.single()
-            return self._to_graph(record)
+        return await self.get_graph(table_id, depth=depth, direction="downstream")
 
     async def delete_lineage(self, rel_id: int) -> None:
         async with self.driver.session() as session:
@@ -140,7 +154,76 @@ class LineageService:
                     detail="Lineage relationship not found",
                 )
 
-    def _to_graph(self, record) -> LineageGraphResponse:
+    async def trace_field(self, field_id: str, direction: str = "both", depth: int = 5) -> FieldTraceResponse:
+        if not self.db_session:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB session required")
+
+        field_repo = FieldRepository(self.db_session)
+        table_repo = TableRepository(self.db_session)
+
+        base_field = await field_repo.get(field_id)
+        if not base_field:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
+
+        async with self.driver.session() as session:
+            upstream_records = []
+            downstream_records = []
+            if direction in ("upstream", "both"):
+                upstream_cursor = await session.run(
+                    queries.TRACE_FIELD_UPSTREAM, field_id=field_id, depth=depth
+                )
+                upstream_records = [dict(record) async for record in upstream_cursor]
+            if direction in ("downstream", "both"):
+                downstream_cursor = await session.run(
+                    queries.TRACE_FIELD_DOWNSTREAM, field_id=field_id, depth=depth
+                )
+                downstream_records = [dict(record) async for record in downstream_cursor]
+
+        table_ids = {base_field.table_id}
+        for rec in upstream_records + downstream_records:
+            if rec.get("table_id"):
+                table_ids.add(uuid.UUID(str(rec["table_id"])))
+
+        table_map = await table_repo.get_tables_with_primary_tags(list(table_ids))
+
+        def to_item(rec: dict) -> TracePathItem:
+            tbl = table_map.get(str(rec.get("table_id"))) or {}
+            return TracePathItem(
+                table_id=str(rec.get("table_id")),
+                table_name=tbl.get("name"),
+                field_id=str(rec.get("field_id")),
+                field_name=rec.get("field_name"),
+                distance=int(rec.get("distance", 0)),
+                primary_tag_path=(tbl.get("primary_tag") or {}).get("path"),
+                source_name=tbl.get("source_name"),
+            )
+
+        upstream_items = [to_item(r) for r in upstream_records]
+        downstream_items = [to_item(r) for r in downstream_records]
+
+        base_table = table_map.get(str(base_field.table_id)) or {}
+        field_ref = FieldRef(
+            id=str(base_field.id),
+            name=getattr(base_field, "name", None),
+            table_id=str(base_field.table_id),
+            table_name=base_table.get("name"),
+        )
+
+        involved_tables = list({str(t.table_id) for t in [base_field]})
+        involved_tables.extend([item.table_id for item in upstream_items + downstream_items])
+        involved_tables = [t for t in dict.fromkeys(involved_tables) if t]
+        involved_fields = [field_ref.id] + [item.field_id for item in upstream_items + downstream_items]
+        involved_fields = [f for f in dict.fromkeys(involved_fields) if f]
+
+        return FieldTraceResponse(
+            field=field_ref,
+            trace_path=TracePath(upstream=upstream_items, downstream=downstream_items),
+            involved_tables=involved_tables,
+            involved_fields=involved_fields,
+        )
+
+    async def _to_graph(self, record) -> LineageGraphResponse:
+        # always return root node even if no edges
         if not record:
             return LineageGraphResponse(root_id="", nodes=[], edges=[])
 
@@ -149,14 +232,13 @@ class LineageService:
         edges: list[LineageGraphEdge] = []
 
         for node in record.get("nodes") or []:
-            # Neo4j returns Node objects; convert to a plain dict first.
             labels = []
             if isinstance(node, dict):
                 props = node
             elif hasattr(node, "_properties"):
                 props = getattr(node, "_properties", {}) or {}
                 labels = list(getattr(node, "labels", []))
-            else:  # best-effort fallback
+            else:
                 try:
                     props = dict(node)
                 except Exception:
@@ -167,12 +249,16 @@ class LineageService:
             source_id = props.get("source_id")
             parent_id = props.get("table_id")  # table_id if it's a field
             ordinal_position = props.get("ordinal_position")
+            distance = props.get("depth") or props.get("distance")
 
             node_type = "table"
             if "Field" in labels:
                 node_type = "field"
             elif "Table" in labels:
                 node_type = "table"
+            elif props.get("table_id"):
+                # heuristically treat nodes with table_id property as field nodes when labels missing
+                node_type = "field"
 
             if business_id:
                 nodes.append(
@@ -183,6 +269,7 @@ class LineageService:
                         source_id=source_id,
                         parent_id=parent_id,
                         ordinal_position=ordinal_position,
+                        distance=distance if distance is not None else (0 if business_id == record.get("root_id") else None),
                     )
                 )
 
@@ -209,8 +296,93 @@ class LineageService:
                 )
             )
 
+        # ensure root node exists
+        root_id = record.get("root_id")
+        if root_id and not any(n.id == root_id for n in nodes):
+            nodes.append(LineageGraphNode(id=root_id, label=None, type="table", distance=0))
+
+        # compute distance using BFS if missing
+        if root_id:
+            adjacency: dict[str, set[str]] = {}
+            for e in edges:
+                adjacency.setdefault(e.from_, set()).add(e.to)
+                adjacency.setdefault(e.to, set()).add(e.from_)
+            dist: dict[str, int] = {str(root_id): 0}
+            q: deque[str] = deque([str(root_id)])
+            while q:
+                cur = q.popleft()
+                for nxt in adjacency.get(cur, []):
+                    if nxt not in dist:
+                        dist[nxt] = dist[cur] + 1
+                        q.append(nxt)
+            enriched = []
+            for n in nodes:
+                enriched.append(
+                    LineageGraphNode(
+                        id=n.id,
+                        label=n.label,
+                        type=n.type,
+                        source_id=n.source_id,
+                        parent_id=n.parent_id,
+                        ordinal_position=n.ordinal_position,
+                        distance=n.distance if n.distance is not None else dist.get(str(n.id)),
+                        source_name=n.source_name,
+                        primary_tag=getattr(n, "primary_tag", None),
+                    )
+                )
+            nodes = enriched
+
+        # enrich primary_tag and source_name if db_session available
+        if self.db_session and nodes:
+            table_ids = [n.id for n in nodes if n.type == "table"]
+            repo = TableRepository(self.db_session)
+            table_map = await repo.get_tables_with_primary_tags([uuid.UUID(t) for t in table_ids]) if table_ids else {}
+            enriched_nodes = []
+            for n in nodes:
+                extra = table_map.get(str(n.id)) or {}
+                enriched_nodes.append(
+                    LineageGraphNode(
+                        id=n.id,
+                        label=n.label,
+                        type=n.type,
+                        source_id=n.source_id or extra.get("source_id"),
+                        parent_id=n.parent_id,
+                        ordinal_position=n.ordinal_position,
+                        primary_tag=extra.get("primary_tag"),
+                        distance=n.distance if n.distance is not None else (0 if str(n.id) == record.get("root_id") else None),
+                        source_name=extra.get("source_name"),
+                    )
+                )
+            nodes = enriched_nodes
+
         return LineageGraphResponse(
-            root_id=record.get("root_id") or "",
+            root_id=root_id or "",
             nodes=nodes,
             edges=edges,
         )
+
+    async def _root_only_graph(self, table_id: str) -> LineageGraphResponse:
+        """Return only the focal table node when Neo4j has no data (e.g., no lineage yet)."""
+        if not self.db_session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+        repo = TableRepository(self.db_session)
+        try:
+            table_uuid = uuid.UUID(table_id)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+
+        table_map = await repo.get_tables_with_primary_tags([table_uuid])
+        table_info = table_map.get(str(table_id))
+        if not table_info:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+
+        node = LineageGraphNode(
+            id=str(table_id),
+            label=table_info.get("name"),
+            type="table",
+            source_id=table_info.get("source_id"),
+            source_name=table_info.get("source_name"),
+            primary_tag=table_info.get("primary_tag"),
+            distance=0,
+        )
+        return LineageGraphResponse(root_id=str(table_id), nodes=[node], edges=[])

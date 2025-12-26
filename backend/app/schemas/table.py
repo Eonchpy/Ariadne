@@ -6,14 +6,25 @@ from pydantic import BaseModel, Field, ConfigDict
 from app.schemas.field import Field as FieldSchema
 
 
+class TagSummary(BaseModel):
+    id: str
+    name: str
+    path: str | None = None
+    level: int | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TableBase(BaseModel):
     source_id: str | None = None
     name: str
     type: str | None = None
     description: str | None = None
     tags: list[str] | None = None
+    tag_ids: list[str] | None = None
     schema_name: str | None = None
     qualified_name: str | None = None
+    primary_tag_id: str | None = None
 
 
 class TableCreate(TableBase):
@@ -25,8 +36,10 @@ class TableUpdate(BaseModel):
     type: str | None = None
     description: str | None = None
     tags: list[str] | None = None
+    tag_ids: list[str] | None = None
     schema_name: str | None = None
     qualified_name: str | None = None
+    primary_tag_id: str | None = None
 
 
 class Table(BaseModel):
@@ -36,6 +49,9 @@ class Table(BaseModel):
     type: str | None = None
     description: str | None = None
     tags: list[str] | None = None
+    tag_ids: list[str] | None = None
+    primary_tag_id: str | None = None
+    primary_tag: TagSummary | None = None
     row_count: int | None = None
     field_count: int | None = None
     schema_name: str | None = None

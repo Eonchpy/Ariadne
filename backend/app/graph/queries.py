@@ -62,18 +62,22 @@ DELETE r
 RETURN count(r) AS deleted_count
 """
 
-GET_UPSTREAM = """
+GET_GRAPH = """
 MATCH (root:Table {id: $table_id})
 CALL apoc.path.expandConfig(root, {relationshipFilter:$rel_filter, minLevel:1, maxLevel:$depth, bfs:true, filterStartNode:false}) YIELD path
 WITH root,
      apoc.coll.toSet(apoc.coll.flatten(collect(nodes(path)) + [root])) AS table_nodes,
      apoc.coll.toSet(apoc.coll.flatten(collect(relationships(path)))) AS table_rels
 WITH root, table_nodes, table_rels, [t IN table_nodes | t.id] AS table_ids
-OPTIONAL MATCH (f:Field) WHERE f.table_id IN table_ids
-WITH root, table_nodes, table_rels, collect(DISTINCT f) AS field_nodes, table_ids
 OPTIONAL MATCH (f1:Field)-[fr:DERIVES_FROM]->(f2:Field)
 WHERE f1.table_id IN table_ids AND f2.table_id IN table_ids
-WITH root, table_nodes, table_rels, field_nodes, collect(DISTINCT fr) AS field_rels
+WITH root, table_nodes, table_rels, collect(DISTINCT fr) AS field_rels, table_ids,
+     apoc.coll.toSet(collect(DISTINCT startNode(fr)) + collect(DISTINCT endNode(fr))) AS field_nodes
+OPTIONAL MATCH (ff:Field)
+WHERE ff.table_id IN table_ids
+WITH root, table_nodes, table_rels, field_rels, field_nodes, table_ids, collect(DISTINCT ff) AS all_fields
+WITH root, table_nodes, table_rels, field_rels,
+     apoc.coll.toSet(field_nodes + all_fields) AS field_nodes
 WITH root,
      apoc.coll.toSet(table_nodes + field_nodes) AS nodes,
      apoc.coll.toSet(table_rels + field_rels) AS rel_objs
@@ -90,30 +94,24 @@ WITH root, nodes,
 RETURN root.id AS root_id, nodes, rels
 """
 
-GET_DOWNSTREAM = """
-MATCH (root:Table {id: $table_id})
-CALL apoc.path.expandConfig(root, {relationshipFilter:$rel_filter, minLevel:1, maxLevel:$depth, bfs:true, filterStartNode:false}) YIELD path
-WITH root,
-     apoc.coll.toSet(apoc.coll.flatten(collect(nodes(path)) + [root])) AS table_nodes,
-     apoc.coll.toSet(apoc.coll.flatten(collect(relationships(path)))) AS table_rels
-WITH root, table_nodes, table_rels, [t IN table_nodes | t.id] AS table_ids
-OPTIONAL MATCH (f:Field) WHERE f.table_id IN table_ids
-WITH root, table_nodes, table_rels, collect(DISTINCT f) AS field_nodes, table_ids
-OPTIONAL MATCH (f1:Field)-[fr:DERIVES_FROM]->(f2:Field)
-WHERE f1.table_id IN table_ids AND f2.table_id IN table_ids
-WITH root, table_nodes, table_rels, field_nodes, collect(DISTINCT fr) AS field_rels
-WITH root,
-     apoc.coll.toSet(table_nodes + field_nodes) AS nodes,
-     apoc.coll.toSet(table_rels + field_rels) AS rel_objs
-WITH root, nodes,
-     [r IN rel_objs |
-        { id: id(r),
-          from: startNode(r).id,
-          to: endNode(r).id,
-          lineage_source: r.lineage_source,
-          confidence: r.confidence,
-          rel_type: type(r)
-        }
-     ] AS rels
-RETURN root.id AS root_id, nodes, rels
+TRACE_FIELD_UPSTREAM = """
+MATCH path = (f:Field {id: $field_id})<-[:DERIVES_FROM*]-(up:Field)
+WHERE length(path) >= 1 AND length(path) <= $depth
+WITH up, path
+RETURN up.id AS field_id,
+       up.name AS field_name,
+       up.table_id AS table_id,
+       length(path) AS distance
+ORDER BY distance ASC
+"""
+
+TRACE_FIELD_DOWNSTREAM = """
+MATCH path = (f:Field {id: $field_id})-[:DERIVES_FROM*]->(down:Field)
+WHERE length(path) >= 1 AND length(path) <= $depth
+WITH down, path
+RETURN down.id AS field_id,
+       down.name AS field_name,
+       down.table_id AS table_id,
+       length(path) AS distance
+ORDER BY distance ASC
 """
