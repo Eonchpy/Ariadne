@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Card, Typography, Space, List, Divider, Button, Modal, Input } from 'antd';
 import { TableOutlined, DownOutlined, UpOutlined, SearchOutlined } from '@ant-design/icons';
@@ -12,7 +12,15 @@ const TableNode = ({ data }: any) => {
 
   const allFields = data.fields || [];
   const highlightedFieldIds = data.highlightedFields || [];
-  
+
+  // Auto-expand only when actively traced to show the technical path
+  useEffect(() => {
+    const hasHighlight = allFields.some((f: any) => highlightedFieldIds.includes(f.id));
+    if (data.isTraced && hasHighlight) {
+      setIsExpanded(true);
+    }
+  }, [highlightedFieldIds, data.isTraced, allFields]);
+
   // Specific check: Is this table or its fields part of the trace?
   // isNew should NOT trigger a permanent blue border
   const isTraced = data.isTraced; 
@@ -80,26 +88,38 @@ const TableNode = ({ data }: any) => {
             renderItem={(item: any) => {
               const isHighlighted = highlightedFieldIds.includes(item.id);
               return (
-                <List.Item style={{ 
-                  padding: '2px 0', 
-                  border: 'none', 
-                  position: 'relative',
-                  background: isHighlighted ? '#e6f7ff' : 'transparent',
-                  borderRadius: '2px'
-                }}>
+                <List.Item 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (data.onFieldClick) data.onFieldClick(item.id);
+                  }}
+                  style={{ 
+                    padding: '2px 4px', 
+                    border: 'none', 
+                    position: 'relative',
+                    background: isHighlighted ? '#e6f7ff' : 'transparent',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  className="field-row-hover"
+                >
                   <Handle 
                     type="target" 
                     position={Position.Left} 
                     id={item.id} 
                     style={{ left: -12, background: isHighlighted ? '#1890ff' : '#d9d9d9', width: 6, height: 6 }} 
                   />
-                  <Text style={{ 
-                    fontSize: '11px', 
-                    color: isHighlighted ? '#1890ff' : 'inherit',
-                    fontWeight: isHighlighted ? 'bold' : 'normal'
-                  }}>
-                    {item.label}
-                  </Text>
+                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Text style={{ 
+                      fontSize: '11px', 
+                      color: isHighlighted ? '#1890ff' : 'inherit',
+                      fontWeight: isHighlighted ? 'bold' : 'normal'
+                    }}>
+                      {item.label}
+                    </Text>
+                    {isHighlighted && <SearchOutlined style={{ fontSize: '10px', color: '#1890ff' }} />}
+                  </Space>
                   <Handle 
                     type="source" 
                     position={Position.Right} 

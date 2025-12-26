@@ -166,7 +166,7 @@ export const MainLayout: React.FC = () => {
         >
           <Outlet />
         </Content>
-        <Footer style={{ textAlign: 'center' }}>Ariadne ©2025 Created by Gemini</Footer>
+        <Footer style={{ textAlign: 'center' }}>Ariadne ©2025</Footer>
       </Layout>
     </Layout>
   );
