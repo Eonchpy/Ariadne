@@ -45,7 +45,7 @@ client.interceptors.response.use(
     });
     return response.data;
   },
-  (error) => {
+  async (error) => {
     const { response } = error;
     if (response) {
       // DEBUG LOGGING FOR ERRORS
@@ -59,7 +59,15 @@ client.interceptors.response.use(
         // Only show message if it's not a login attempt
         if (!response.config.url?.includes('/auth/login')) {
             message.error('Session expired. Please log in again.');
-            // We could trigger logout here if we had access to the store
+            
+            // IMPORT: Access the store from outside React components to reset state
+            const { useAuthStore } = await import('@/stores/authStore');
+            useAuthStore.getState().logout();
+            
+            // Force a redirect if the store update doesn't trigger fast enough
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
         }
       } else {
         const errorMsg = response.data?.error?.message || 'An error occurred';
