@@ -11,7 +11,7 @@ import ReactFlow, {
   useReactFlow
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Card, Space, Select, Slider, Button, message, Empty, Modal, Drawer, List } from 'antd';
+import { Card, Space, Select, Slider, Button, message, Empty, Drawer, List, Modal } from 'antd';
 import { FilterOutlined, RetweetOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { tablesApi } from '@/api/endpoints/tables';
@@ -20,6 +20,7 @@ import TableNode from '@/components/lineage/TableNode';
 import FieldNode from '@/components/lineage/FieldNode';
 import BucketNode from '@/components/lineage/BucketNode';
 import LineageErrorBoundary from '@/components/lineage/LineageErrorBoundary';
+import CreateLineageModal from '@/components/lineage/CreateLineageModal';
 import client from '@/api/client';
 import type { Table as MetadataTable } from '@/types/api';
 import dagre from 'dagre';
@@ -44,11 +45,20 @@ const projectGraphV6 = (
 ) => {
   const getPath = (t: any) => t?.primary_tag?.path || t?.primary_tag_path || null;
 
+  // 0. Count tables for Adaptive Threshold using rawNodes
+  const tablesCount = rawNodes.filter(n => n.type === 'table');
+  const threshold = Number(import.meta.env.VITE_LINEAGE_AGGREGATION_THRESHOLD) || 15;
+  const shouldAggregate = tablesCount.length > threshold || manualExpandedPaths.length > 0;
+
+  if (!shouldAggregate) {
+      return { visibleTables: tablesCount, buckets: [] };
+  }
+
   // 1. Identify Active Nodes
   const activeNodeIds = new Set([focalTableId, ...involvedInTrace, ...extractedTableIds]);
   rawEdges.forEach(e => {
-      activeNodeIds.add(e.from || e.source_id);
-      activeNodeIds.add(e.to || e.target_id);
+      activeNodeIds.add((e.from || e.source_id).split('.')[0]);
+      activeNodeIds.add((e.to || e.target_id).split('.')[0]);
   });
   const activeNodes = rawNodes.filter(n => activeNodeIds.has(n.id));
   const tables = activeNodes.filter(n => n.type === 'table');
@@ -58,21 +68,21 @@ const projectGraphV6 = (
   const hasUp = new Set();
   const hasDown = new Set();
   rawEdges.forEach(e => {
-      hasUp.add(e.to || e.target_id);
-      hasDown.add(e.from || e.source_id);
+      hasUp.add((e.to || e.target_id).split('.')[0]);
+      hasDown.add((e.from || e.source_id).split('.')[0]);
   });
 
   const focalNode = rawNodes.find(n => n.id === focalTableId);
   const focalPath = getPath(focalNode);
 
-  const bridges = tables.filter(t => {
+  const bridgeIds = tables.filter(t => {
       const isTechnicalBridge = hasUp.has(t.id) && hasDown.has(t.id);
       if (!isTechnicalBridge) return false;
       const myPath = getPath(t);
       if (myPath === focalPath) return false;
-      const myUpstreamEdges = rawEdges.filter(e => (e.to || e.target_id) === t.id);
+      const myUpstreamEdges = rawEdges.filter(e => (e.to || e.target_id).split('.')[0] === t.id);
       const sharesDomainWithParent = myUpstreamEdges.some(e => {
-          const parentId = e.from || e.source_id;
+          const parentId = (e.from || e.source_id).split('.')[0];
           const parentNode = rawNodes.find(n => n.id === parentId);
           return getPath(parentNode) === myPath;
       });
@@ -86,7 +96,7 @@ const projectGraphV6 = (
       if (!path) return;
       const parts = path.split('-');
       const cumulativePaths = parts.map((_: string, i: number) => parts.slice(0, i + 1).join('-'));
-      const isVisible = t.id === focalTableId || involvedInTrace.includes(t.id) || extractedTableIds.includes(t.id) || bridges.includes(t.id);
+      const isVisible = t.id === focalTableId || involvedInTrace.includes(t.id) || extractedTableIds.includes(t.id) || bridgeIds.includes(t.id);
       cumulativePaths.forEach((p: string) => {
           if (!domainStats.has(p)) domainStats.set(p, { total: 0, visible: 0 });
           const s = domainStats.get(p)!;
@@ -102,10 +112,11 @@ const projectGraphV6 = (
   const expanded = Array.from(new Set([...manualExpandedPaths, ...autoExpanded]));
 
   const domainGroups = new Map<string, any[]>();
+  const independentIds = new Set([focalTableId, ...involvedInTrace, ...extractedTableIds, ...bridgeIds]);
+
   tables.forEach(node => {
     const path = getPath(node);
-    const isAlwaysVisible = node.id === focalTableId || involvedInTrace.includes(node.id) || extractedTableIds.includes(node.id) || bridges.includes(node.id) || !path;
-    if (isAlwaysVisible) {
+    if (independentIds.has(node.id) || !path) {
       visibleTables.push(node);
       return;
     }
@@ -129,17 +140,35 @@ const projectGraphV6 = (
   });
 
   domainGroups.forEach((items, key) => {
-      buckets.push({ id: `bucket_${key}`, type: 'bucket', label: key.split('-').pop(), tag_path: key, isExpanded: false, table_count: items.length, tables: items });
+      buckets.push({ 
+          id: `bucket_${key}`, 
+          type: 'bucket', 
+          label: key.split('-').pop(), 
+          tag_path: key, 
+          isExpanded: false, 
+          level: key.split('-').length,
+          table_count: items.length, 
+          tables: items 
+      });
   });
 
   expanded.forEach(p => {
       const hasUnextractedActiveMember = activeNodes.some(n => {
           const nPath = getPath(n);
-          const isIndependent = n.id === focalTableId || extractedTableIds.includes(n.id) || bridges.includes(n.id);
+          const isIndependent = n.id === focalTableId || extractedTableIds.includes(n.id) || bridgeIds.includes(n.id);
           return !isIndependent && nPath && nPath.startsWith(p);
       });
       if (hasUnextractedActiveMember && domainStats.has(p)) {
-          buckets.push({ id: `bucket_${p}`, type: 'bucket', label: p.split('-').pop(), tag_path: p, isExpanded: true, table_count: domainStats.get(p)?.total || 0, tables: [] });
+          buckets.push({ 
+              id: `bucket_${p}`, 
+              type: 'bucket', 
+              label: p.split('-').pop(), 
+              tag_path: p, 
+              isExpanded: true, 
+              level: p.split('-').length,
+              table_count: domainStats.get(p)?.total || 0, 
+              tables: [] 
+          });
       }
   });
 
@@ -206,6 +235,7 @@ const LineageGraphContent: React.FC = () => {
   const [depth, setDepth] = useState(3);
   const [direction, setDirection] = useState<'upstream' | 'downstream'>('upstream');
   const [loading, setLoading] = useState(false);
+  const [isCreateModalVisible, setCreateModalVisible] = useState(false);
   const [rawLineageData, setRawLineageData] = useState<any>(null);
   const [allTables, setAllTables] = useState<MetadataTable[]>([]);
   const [highlightedFieldIds, setHighlightedFieldIds] = useState<string[]>([]);
@@ -404,7 +434,7 @@ const LineageGraphContent: React.FC = () => {
             <Space>
               {highlightedFieldIds.length > 0 && <Button danger onClick={resetHighlight}>Clear Trace</Button>}
               <Button icon={<RetweetOutlined />} onClick={fetchLineage} loading={loading} disabled={!tableId}>Refresh</Button>
-              <Button icon={<PlusOutlined />} onClick={() => message.info('Coming soon')}>Create Lineage</Button>
+              <Button icon={<PlusOutlined />} onClick={() => setCreateModalVisible(true)}>Create Lineage</Button>
             </Space>
           </div>
         </Card>
@@ -429,6 +459,13 @@ const LineageGraphContent: React.FC = () => {
         <List itemLayout="horizontal" dataSource={bucketTables} renderItem={(item: any) => (<List.Item actions={[<Button type="link" onClick={() => extractTable(item)}>Extract</Button>]}>
           <List.Item.Meta title={item.label || item.name} description={item.description || 'No description'} /></List.Item>)} />
       </Drawer>
+      <CreateLineageModal 
+        visible={isCreateModalVisible} 
+        onClose={() => setCreateModalVisible(false)} 
+        onSuccess={fetchLineage} 
+        initialSourceTableId={direction === 'downstream' ? tableId : undefined} 
+        initialTargetTableId={direction === 'upstream' ? tableId : undefined} 
+      />
     </LineageErrorBoundary>
   );
 };

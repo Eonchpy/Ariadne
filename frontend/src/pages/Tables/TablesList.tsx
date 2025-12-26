@@ -16,7 +16,6 @@ import { useDataSourceStore } from '@/stores/dataSourceStore';
 import TagSelect from '@/components/TagSelect/TagSelect';
 import { Tooltip } from 'antd';
 import type { Table as MetadataTable } from '@/types/api';
-import type { Tag as MetadataTag } from '@/types/tag';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -49,29 +48,15 @@ const TablesList: React.FC = () => {
       setTotal(response.total);
 
       // Background Enrichment: Fetch details for each table to get accurate counts and tags
-      // We do this in the background to not block the initial render
       const enrichmentPromises = response.items.map(async (table) => {
         try {
           const detail = await tablesApi.get(table.id);
-          // Also fetch tags from the tags API specifically as table detail might not have names
           const tagsResponse = await tagsApi.getTableTags(table.id);
-          
-          // Logic: Extract ancestors from path for DataSource branch, keep others as is
-          const processedTags = new Set<string>();
-          (tagsResponse.items || []).forEach((t: MetadataTag) => {
-            if (t.path?.startsWith('DataSource')) {
-              const parts = t.path.split('-');
-              if (parts.length >= 1) processedTags.add(parts[0]);
-              if (parts.length >= 2) processedTags.add(parts[1]);
-            } else {
-              processedTags.add(t.name);
-            }
-          });
           
           return {
             id: table.id,
             field_count: detail.fields?.length || 0,
-            tags: Array.from(processedTags)
+            fullTags: tagsResponse.items || []
           };
         } catch (e) {
           return null;
@@ -87,7 +72,7 @@ const TablesList: React.FC = () => {
         setTables(prev => prev.map(t => enrichmentMap[t.id] ? {
           ...t,
           field_count: enrichmentMap[t.id].field_count,
-          tags: enrichmentMap[t.id].tags
+          tags: enrichmentMap[t.id].fullTags
         } : t));
       });
 
@@ -174,17 +159,30 @@ const TablesList: React.FC = () => {
       title: 'Tags',
       dataIndex: 'tags',
       key: 'tags',
-      render: (tags: string[], record: MetadataTable) => {
-        console.debug(`Table ${record.name} tags:`, tags);
-        const displayTags = tags || [];
+      render: (tags: any[]) => {
+        // 1. Sort tags by path length (deepest first)
+        const sortedTags = [...(tags || [])].sort((a, b) => {
+          const depthA = typeof a === 'string' ? 0 : (a.path?.split('-').length || 0);
+          const depthB = typeof b === 'string' ? 0 : (b.path?.split('-').length || 0);
+          return depthB - depthA;
+        });
+
+        // 2. FILTER: Hide system-generated DataSource tags
+        const filteredTags = sortedTags.filter(tag => {
+            const path = typeof tag === 'string' ? '' : (tag.path || '');
+            return !path.startsWith('DataSource');
+        });
+
         return (
           <Space wrap size={[0, 4]}>
-            {displayTags.slice(0, 2).map(tag => (
-              <Tag key={tag} color="blue" style={{ fontSize: '10px' }}>{tag}</Tag>
+            {filteredTags.slice(0, 3).map((tag, idx) => (
+              <Tag key={typeof tag === 'string' ? tag + idx : tag.id} color="blue" style={{ fontSize: '10px' }}>
+                {typeof tag === 'string' ? tag : tag.name}
+              </Tag>
             ))}
-            {displayTags.length > 2 && (
-              <Tooltip title={displayTags.slice(2).join(', ')}>
-                <Tag>+{displayTags.length - 2}</Tag>
+            {filteredTags.length > 3 && (
+              <Tooltip title={filteredTags.slice(3).map(t => typeof t === 'string' ? t : t.name).join(', ')}>
+                <Tag>+{filteredTags.length - 3}</Tag>
               </Tooltip>
             )}
           </Space>

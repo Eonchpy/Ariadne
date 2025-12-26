@@ -23,10 +23,19 @@ export const elasticConfigSchema = z.object({
   use_ssl: z.boolean().default(false),
 });
 
+export const mysqlConfigSchema = z.object({
+  host: z.string().min(1, 'Host is required'),
+  port: z.coerce.number().int().min(1).max(65535),
+  username: z.string().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required'),
+  database: z.string().optional(),
+  use_ssl: z.boolean().default(false),
+});
+
 export const dataSourceFormSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters'),
   description: z.string().optional(),
-  type: z.enum(['oracle', 'mongodb', 'elasticsearch']),
+  type: z.enum(['oracle', 'mongodb', 'elasticsearch', 'mysql']),
   connection_config: z.record(z.string(), z.any()),
 }).superRefine((data, ctx) => {
   let result;
@@ -36,6 +45,8 @@ export const dataSourceFormSchema = z.object({
     result = mongoConfigSchema.safeParse(data.connection_config);
   } else if (data.type === 'elasticsearch') {
     result = elasticConfigSchema.safeParse(data.connection_config);
+  } else if (data.type === 'mysql') {
+    result = mysqlConfigSchema.safeParse(data.connection_config);
   }
 
   if (result && !result.success) {

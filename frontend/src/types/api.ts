@@ -41,7 +41,7 @@ export interface DataSourceConnectionConfig {
   [key: string]: any;
 }
 
-export type DataSourceType = 'oracle' | 'mongodb' | 'elasticsearch';
+export type DataSourceType = 'oracle' | 'mongodb' | 'elasticsearch' | 'mysql';
 
 export interface DataSource {
   id: string;

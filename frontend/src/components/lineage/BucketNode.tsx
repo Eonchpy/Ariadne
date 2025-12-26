@@ -5,24 +5,31 @@ import { ClusterOutlined, PlusOutlined, MinusOutlined } from '@ant-design/icons'
 
 const { Text } = Typography;
 
+const TIER_STYLES: Record<number, any> = {
+  1: { border: '#1890ff', bg: 'rgba(24, 144, 255, 0.03)', text: '#1890ff' },
+  2: { border: '#52c41a', bg: 'rgba(82, 196, 26, 0.03)', text: '#52c41a' },
+  3: { border: '#722ed1', bg: 'rgba(114, 46, 209, 0.03)', text: '#722ed1' },
+};
+
 const BucketNode = ({ data }: any) => {
   const isLeft = data.side === 'left';
   const isExpanded = data.isExpanded;
+  const level = data.level || 1;
+  const style = TIER_STYLES[Math.min(level, 3)];
 
-  // Visual Container Style (for expanded state)
   if (isExpanded) {
     return (
       <div style={{ 
         width: data.width || 240, 
         height: data.height || 100, 
-        background: 'rgba(24, 144, 255, 0.02)', 
-        border: '1px dashed #1890ff', 
+        background: style.bg, 
+        border: `1px dashed ${style.border}`, 
         borderRadius: 12,
         padding: '8px',
         position: 'relative'
       }}>
         <div style={{ position: 'absolute', top: -22, left: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
+          <Text strong style={{ fontSize: '12px', color: style.text }}>
             <ClusterOutlined /> {data.label}
           </Text>
           <Button 
@@ -33,7 +40,6 @@ const BucketNode = ({ data }: any) => {
             style={{ color: '#ff4d4f', padding: 0, height: 'auto' }}
           />
         </div>
-        {/* NO HANDLES IN EXPANDED STATE - Lines pierce through to children */}
       </div>
     );
   }

@@ -147,6 +147,7 @@ const DataSourceForm: React.FC = () => {
                       <Option value="oracle">Oracle</Option>
                       <Option value="mongodb">MongoDB</Option>
                       <Option value="elasticsearch">Elasticsearch</Option>
+                      <Option value="mysql">MySQL</Option>
                     </Select>
                   )}
                 />
@@ -207,6 +208,63 @@ const DataSourceForm: React.FC = () => {
                     />
                   </Form.Item>
                 </div>
+              </>
+            )}
+
+            {/* MYSQL CONFIG */}
+            {selectedType === 'mysql' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+                  <Form.Item label="Host" validateStatus={errors.connection_config?.host ? 'error' : ''} help={errors.connection_config?.host?.message as any}>
+                    <Controller
+                      name="connection_config.host"
+                      control={control}
+                      render={({ field }) => <Input {...(field as any)} placeholder="localhost" />}
+                    />
+                  </Form.Item>
+                  <Form.Item label="Port" validateStatus={errors.connection_config?.port ? 'error' : ''} help={errors.connection_config?.port?.message as any}>
+                    <Controller
+                      name="connection_config.port"
+                      control={control}
+                      defaultValue={3306}
+                      render={({ field }) => <InputNumber {...(field as any)} style={{ width: '100%' }} />}
+                    />
+                  </Form.Item>
+                </div>
+                <Form.Item label="Database (Optional)" validateStatus={errors.connection_config?.database ? 'error' : ''} help={errors.connection_config?.database?.message as any}>
+                  <Controller
+                    name="connection_config.database"
+                    control={control}
+                    render={({ field }) => <Input {...(field as any)} placeholder="my_database" />}
+                  />
+                </Form.Item>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <Form.Item label="Username" validateStatus={errors.connection_config?.username ? 'error' : ''} help={errors.connection_config?.username?.message as any}>
+                    <Controller
+                      name="connection_config.username"
+                      control={control}
+                      render={({ field }) => <Input {...(field as any)} />}
+                    />
+                  </Form.Item>
+                  <Form.Item label="Password" validateStatus={errors.connection_config?.password ? 'error' : ''} help={errors.connection_config?.password?.message as any}>
+                    <Controller
+                      name="connection_config.password"
+                      control={control}
+                      render={({ field }) => <Input.Password {...(field as any)} />}
+                    />
+                  </Form.Item>
+                </div>
+                <Form.Item>
+                  <Controller
+                    name="connection_config.use_ssl"
+                    control={control}
+                    render={({ field }) => (
+                      <Checkbox checked={field.value as any} {...(field as any)}>
+                        Use SSL
+                      </Checkbox>
+                    )}
+                  />
+                </Form.Item>
               </>
             )}
 
