@@ -7,6 +7,7 @@ import { lineageApi } from '@/api/endpoints/lineage';
 import { tagsApi } from '@/api/endpoints/tags';
 import { useDataSourceStore } from '@/stores/dataSourceStore';
 import type { TableDetail } from '@/types/api';
+import BlastRadius from '@/components/analysis/BlastRadius';
 
 const { Title, Text } = Typography;
 
@@ -200,6 +201,15 @@ const TableDetailPage: React.FC = () => {
                     locale={{ emptyText: 'No downstream tables dependent on this table.' }}
                   />
                 </Space>
+              )
+            },
+            {
+              key: 'analysis',
+              label: 'Blast Radius (Business Impact)',
+              children: (
+                <div style={{ padding: '8px 0' }}>
+                  <BlastRadius tableId={table.id} />
+                </div>
               )
             }
           ]}

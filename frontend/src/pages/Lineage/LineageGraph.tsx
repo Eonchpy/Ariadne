@@ -12,7 +12,12 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Card, Space, Select, Slider, Button, message, Empty, Drawer, List, Modal } from 'antd';
-import { FilterOutlined, RetweetOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { 
+  FilterOutlined, 
+  RetweetOutlined, 
+  PlusOutlined, 
+  SearchOutlined
+} from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { tablesApi } from '@/api/endpoints/tables';
 import { lineageApi } from '@/api/endpoints/lineage';
@@ -316,6 +321,7 @@ const LineageGraphContent: React.FC = () => {
     }
   };
 
+
   const onEdgeClick = (_: any, edge: any) => {
     if (edge.id.startsWith('path-') || edge.id.startsWith('e-')) {
         Modal.confirm({
@@ -367,9 +373,20 @@ const LineageGraphContent: React.FC = () => {
         const isBucket = n.type === 'bucket';
         const fields = isBucket ? [] : rNodes.filter((f: any) => f.type === 'field' && f.parent_id === n.id);
         const isTracedTable = involvedTables.includes(n.id) || n.id === tableId;
+        
         return {
             id: n.id, type: isBucket ? 'bucket' : 'table', position: { x: 0, y: 0 },
-            data: { ...n, label: n.label || n.name, fields, highlightedFields: highlightedFieldIds, isNew: n.id === lastExtractedId, isTraced: isTracedTable, onFieldClick, onExpand: handleBucketExpand, onCollapse: handleBucketCollapse, isDimmed: isTracing && !isTracedTable, side: direction === 'upstream' ? 'left' : 'right' }
+            data: { 
+                ...n, 
+                label: n.label || n.name, 
+                fields, 
+                highlightedFields: highlightedFieldIds, 
+                isNew: n.id === lastExtractedId, 
+                isTraced: isTracedTable, 
+                onFieldClick, onExpand: handleBucketExpand, onCollapse: handleBucketCollapse, 
+                isDimmed: isTracing && !isTracedTable, 
+                side: direction === 'upstream' ? 'left' : 'right' 
+            }
         };
     });
 
@@ -408,7 +425,22 @@ const LineageGraphContent: React.FC = () => {
         if (!edgeSet.has(edgeKey)) {
             edgeSet.add(edgeKey);
             const isRel = isTracing && (highlightedFieldIds.includes(rawSrcId) || highlightedFieldIds.includes(rawTgtId));
-            finalEdges.push({ id: `e-${edgeKey}`, source: sProxyId, target: tProxyId, sourceHandle: sH, targetHandle: tH, label: isRel || !isTracing ? (e.lineage_source?.toUpperCase() || "") : "", animated: isRel || e.lineage_source === 'inferred', style: { stroke: isRel ? '#1890ff' : '#d9d9d9', strokeWidth: isRel ? 3 : (sH || tH ? 1 : 2), opacity: isTracing && !isRel ? 0.2 : 1 }, markerEnd: { type: MarkerType.ArrowClosed, color: isRel ? '#1890ff' : '#d9d9d9' } });
+            
+            finalEdges.push({ 
+                id: `e-${edgeKey}`, 
+                source: sProxyId, 
+                target: tProxyId, 
+                sourceHandle: sH, 
+                targetHandle: tH, 
+                label: isRel || !isTracing ? (e.lineage_source?.toUpperCase() || "") : "", 
+                animated: isRel || e.lineage_source === 'inferred', 
+                style: { 
+                    stroke: isRel ? '#1890ff' : '#d9d9d9', 
+                    strokeWidth: isRel ? 3 : (sH || tH ? 1 : 2), 
+                    opacity: isTracing && !isRel ? 0.2 : 1 
+                }, 
+                markerEnd: { type: MarkerType.ArrowClosed, color: isRel ? '#1890ff' : '#d9d9d9' } 
+            });
         }
     });
 

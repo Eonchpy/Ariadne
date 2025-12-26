@@ -62,7 +62,9 @@ const BucketNode = ({ data }: any) => {
         display: 'flex', 
         flexDirection: 'column', 
         justifyContent: 'center',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        opacity: data.isDimmed ? 0.4 : 1,
+        transition: 'all 0.3s'
       }}>
         <Space>
           <ClusterOutlined style={{ color: '#52c41a' }} />
