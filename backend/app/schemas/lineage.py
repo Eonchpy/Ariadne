@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -107,3 +107,60 @@ class FieldTraceResponse(BaseModel):
     trace_path: TracePath
     involved_tables: list[str] = Field(default_factory=list)
     involved_fields: list[str] = Field(default_factory=list)
+
+
+class PathItem(BaseModel):
+    path: list[str] = Field(default_factory=list)
+    length: int | None = None
+
+
+class PathsResponse(BaseModel):
+    nodes: list[LineageGraphNode] = Field(default_factory=list)
+    edges: list[LineageGraphEdge] = Field(default_factory=list)
+    paths: list[PathItem] = Field(default_factory=list)
+
+
+class CycleListResponse(BaseModel):
+    cycles: list[list[str]] = Field(default_factory=list)
+    nodes: list[LineageGraphNode] = Field(default_factory=list)
+    edges: list[LineageGraphEdge] = Field(default_factory=list)
+
+
+class ImpactNodeSummary(BaseModel):
+    id: str
+    distance: int | None = None
+    type: str | None = None
+    primary_tag: Optional[dict[str, Any]] = None
+    source_name: Optional[str] = None
+
+
+class ImpactAnalysisResponse(BaseModel):
+    root_id: str
+    direction: str
+    depth: int
+    nodes: list[LineageGraphNode] = Field(default_factory=list)
+    edges: list[LineageGraphEdge] = Field(default_factory=list)
+    impacted: list[ImpactNodeSummary] = Field(default_factory=list)
+
+
+class DomainGroup(BaseModel):
+    tag_id: Optional[str] = None
+    tag_name: Optional[str] = None
+    tag_path: Optional[str] = None
+    table_count: int
+    severity: Literal["high", "medium", "low"]
+    sample_tables: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class BlastRadiusResponse(BaseModel):
+    root_id: str
+    direction: Literal["upstream", "downstream"]
+    depth: int
+    granularity: Literal["table", "field"] = "table"
+    total_impacted_tables: int
+    total_impacted_fields: int
+    total_impacted_domains: int
+    max_depth_reached: int
+    severity_level: Literal["high", "medium", "low"]
+    domain_groups: list[DomainGroup] = Field(default_factory=list)
+    depth_map: dict[int, int] = Field(default_factory=dict)

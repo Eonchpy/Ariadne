@@ -10,6 +10,9 @@ from app.schemas.lineage import (
     TableLineageCreateRequest,
     FieldLineageCreateRequest,
     LineageRelationship,
+    PathsResponse,
+    CycleListResponse,
+    ImpactAnalysisResponse,
 )
 from app.services.lineage_service import LineageService
 from app.graph.client import neo4j_dependency
@@ -108,3 +111,52 @@ async def trace_field(
 ):
     service = LineageService(driver, db_session=session)
     return await service.trace_field(field_id=field_id, direction=direction, depth=depth)
+
+
+@router.get("/paths", response_model=PathsResponse)
+async def find_paths(
+    start_node_id: str,
+    end_node_id: str,
+    max_depth: int = 20,
+    shortest_only: bool = False,
+    driver=Depends(neo4j_dependency),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = LineageService(driver, db_session=session)
+    return await service.find_paths(start_id=start_node_id, end_id=end_node_id, max_depth=max_depth, shortest_only=shortest_only)
+
+
+@router.get("/cycles", response_model=CycleListResponse)
+async def find_cycles(
+    table_id: str | None = None,
+    max_depth: int = 10,
+    driver=Depends(neo4j_dependency),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = LineageService(driver, db_session=session)
+    return await service.find_cycles(table_id=table_id, max_depth=max_depth)
+
+
+@router.get("/analysis", response_model=ImpactAnalysisResponse)
+async def impact_analysis(
+    node_id: str,
+    direction: str = "downstream",
+    depth: int = 5,
+    driver=Depends(neo4j_dependency),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = LineageService(driver, db_session=session)
+    return await service.impact_analysis(node_id=node_id, direction=direction, depth=depth)
+
+
+@router.get("/analysis/blast-radius/{table_id}")
+async def blast_radius(
+    table_id: str,
+    direction: str = "downstream",
+    depth: int = 5,
+    granularity: str = "table",
+    driver=Depends(neo4j_dependency),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = LineageService(driver, db_session=session)
+    return await service.blast_radius(table_id=table_id, direction=direction, depth=depth, granularity=granularity)

@@ -11,6 +11,9 @@ from app.schemas.lineage import (
     FieldRef,
     TracePath,
     TracePathItem,
+    PathsResponse,
+    CycleListResponse,
+    ImpactAnalysisResponse,
     LineageGraphResponse,
     LineageGraphNode,
     LineageGraphEdge,
@@ -221,6 +224,306 @@ class LineageService:
             involved_tables=involved_tables,
             involved_fields=involved_fields,
         )
+
+    async def find_paths(
+        self,
+        start_id: str,
+        end_id: str,
+        max_depth: int = 20,
+        shortest_only: bool = False,
+    ) -> PathsResponse:
+        async with self.driver.session() as session:
+            query = queries.SHORTEST_PATHS if shortest_only else queries.ALL_PATHS
+            result = await session.run(query, start_id=start_id, end_id=end_id, max_depth=max_depth)
+            paths = []
+            nodes_seen = {}
+            edges_seen = {}
+            async for record in result:
+                path = record["path"]
+                if not path:
+                    continue
+                nodes_in_path = list(path.nodes)
+                rels_in_path = list(path.relationships)
+                paths.append(
+                    {"path": [n["id"] for n in nodes_in_path if "id" in n], "length": len(nodes_in_path) - 1}
+                )
+                for idx, n in enumerate(nodes_in_path):
+                    nid = n.get("id")
+                    if nid and nid not in nodes_seen:
+                        # Preserve labels for type detection and attach distance from start
+                        props = dict(n)
+                        props["labels"] = list(getattr(n, "labels", []))
+                        props["distance"] = idx
+                        props.setdefault("id", nid)
+                        nodes_seen[nid] = props
+                    for r in rels_in_path:
+                        rid = str(r.id)
+                        if rid not in edges_seen:
+                            edges_seen[rid] = {
+                                "id": rid,
+                            "from": r.start_node["id"],
+                            "to": r.end_node["id"],
+                            "lineage_source": r.get("lineage_source"),
+                            "confidence": r.get("confidence"),
+                            "rel_type": type(r).__name__ if hasattr(r, "__class__") else None,
+                        }
+
+        nodes = await self._convert_nodes(list(nodes_seen.values()))
+        edges = self._convert_edges(list(edges_seen.values()))
+        return PathsResponse(
+            nodes=nodes,
+            edges=edges,
+            paths=[{"path": p["path"], "length": p.get("length")} for p in paths],
+        )
+
+    async def find_cycles(self, table_id: str | None = None, max_depth: int = 10) -> CycleListResponse:
+        async with self.driver.session() as session:
+            result = await session.run(queries.CYCLES_BY_TABLE, table_id=table_id, max_depth=max_depth)
+            cycles = []
+            nodes_seen = {}
+            edges_seen = {}
+            async for record in result:
+                path = record["path"]
+                if not path:
+                    continue
+                nodes_in_path = list(path.nodes)
+                rels_in_path = list(path.relationships)
+                cycles.append([n["id"] for n in nodes_in_path if "id" in n])
+                for n in nodes_in_path:
+                    nid = n.get("id")
+                    if nid and nid not in nodes_seen:
+                        nodes_seen[nid] = n
+                for r in rels_in_path:
+                    rid = str(r.id)
+                    if rid not in edges_seen:
+                        edges_seen[rid] = {
+                            "id": rid,
+                            "from": r.start_node["id"],
+                            "to": r.end_node["id"],
+                            "lineage_source": r.get("lineage_source"),
+                            "confidence": r.get("confidence"),
+                            "rel_type": type(r).__name__ if hasattr(r, "__class__") else None,
+                        }
+
+        nodes = await self._convert_nodes(list(nodes_seen.values()))
+        edges = self._convert_edges(list(edges_seen.values()))
+        return CycleListResponse(cycles=cycles, nodes=nodes, edges=edges)
+
+    async def impact_analysis(self, node_id: str, direction: str = "downstream", depth: int = 5) -> ImpactAnalysisResponse:
+        # reuse get_graph with direction; gather impacted nodes list
+        graph = await self.get_graph(table_id=node_id, depth=depth, direction=direction)
+        impacted = []
+        for n in graph.nodes:
+            if str(n.id) == graph.root_id:
+                continue
+            impacted.append(
+                {
+                    "id": n.id,
+                    "distance": n.distance,
+                    "type": n.type,
+                    "primary_tag": getattr(n, "primary_tag", None),
+                    "source_name": n.source_name,
+                }
+            )
+        return ImpactAnalysisResponse(
+            root_id=graph.root_id,
+            direction=direction,
+            depth=depth,
+            nodes=graph.nodes,
+            edges=graph.edges,
+            impacted=impacted,
+        )
+
+    async def blast_radius(
+        self,
+        table_id: str,
+        direction: str = "downstream",
+        depth: int = 5,
+        granularity: str = "table",
+    ):
+        # Get graph in the desired direction/depth
+        graph = await self.get_graph(table_id=table_id, depth=depth, direction=direction)
+
+        # Deduplicate tables/fields and capture min distance
+        table_nodes = [n for n in graph.nodes if n.type == "table" and str(n.id) != graph.root_id]
+        field_nodes = [n for n in graph.nodes if n.type == "field"]
+
+        table_distance: dict[str, int] = {}
+        for n in table_nodes:
+            dist = n.distance or 0
+            if str(n.id) not in table_distance or dist < table_distance[str(n.id)]:
+                table_distance[str(n.id)] = dist
+        field_distance: dict[str, int] = {}
+        for f in field_nodes:
+            dist = f.distance or 0
+            if str(f.id) not in field_distance or dist < field_distance[str(f.id)]:
+                field_distance[str(f.id)] = dist
+
+        total_tables = len(table_distance)
+        total_fields = len(field_distance)
+        max_depth_reached = max(table_distance.values()) if table_distance else 0
+
+        def severity_for(count: int) -> str:
+            if count >= 10:
+                return "high"
+            if count >= 5:
+                return "medium"
+            return "low"
+
+        # Group by primary_tag
+        domain_groups: dict[str, dict] = {}
+        for n in table_nodes:
+            pid = None
+            pname = None
+            ppath = None
+            if hasattr(n, "primary_tag") and n.primary_tag:
+                pid = n.primary_tag.get("id")
+                pname = n.primary_tag.get("name")
+                ppath = n.primary_tag.get("path")
+            key = str(pid) if pid else f"__no_tag__:{n.id}"
+            if key not in domain_groups:
+                domain_groups[key] = {
+                    "tag_id": pid,
+                    "tag_name": pname,
+                    "tag_path": ppath,
+                    "tables": [],
+                }
+            domain_groups[key]["tables"].append({"id": str(n.id), "name": n.label, "distance": n.distance})
+
+        # Build depth map (hop -> table count)
+        depth_map: dict[int, int] = {}
+        for dist in table_distance.values():
+            if dist <= 0:
+                continue
+            depth_map[dist] = depth_map.get(dist, 0) + 1
+
+        groups_out = []
+        for g in domain_groups.values():
+            tables = g["tables"]
+            count = len(tables)
+            sev = severity_for(count)
+            # sort sample by distance then name
+            tables_sorted = sorted(tables, key=lambda t: (t.get("distance") or 0, t.get("name") or ""))[:5]
+            groups_out.append(
+                {
+                    "tag_id": g["tag_id"],
+                    "tag_name": g["tag_name"],
+                    "tag_path": g["tag_path"],
+                    "table_count": count,
+                    "severity": sev,
+                    "sample_tables": tables_sorted,
+                }
+            )
+
+        # Sort groups: severity high>medium>low, then table_count desc
+        sev_order = {"high": 0, "medium": 1, "low": 2}
+        groups_out = sorted(groups_out, key=lambda g: (sev_order.get(g["severity"], 3), -g["table_count"]))
+
+        overall_sev = severity_for(total_tables)
+
+        from app.schemas.lineage import BlastRadiusResponse  # local import to avoid cycle
+
+        return BlastRadiusResponse(
+            root_id=table_id,
+            direction=direction,
+            depth=depth,
+            granularity=granularity,
+            total_impacted_tables=total_tables,
+            total_impacted_fields=total_fields if granularity == "field" else 0,
+            total_impacted_domains=len(groups_out),
+            max_depth_reached=max_depth_reached,
+            severity_level=overall_sev,
+            domain_groups=groups_out,
+            depth_map=depth_map,
+        )
+
+    async def _convert_nodes(self, raw_nodes: list[Any]) -> list[LineageGraphNode]:
+        nodes: list[LineageGraphNode] = []
+        for node in raw_nodes:
+            labels = []
+            if isinstance(node, dict):
+                props = node
+            elif hasattr(node, "_properties"):
+                props = getattr(node, "_properties", {}) or {}
+                labels = list(getattr(node, "labels", []))
+            else:
+                try:
+                    props = dict(node)
+                except Exception:
+                    props = {}
+            business_id = props.get("id")
+            label = props.get("name")
+            source_id = props.get("source_id")
+            parent_id = props.get("table_id")
+            ordinal_position = props.get("ordinal_position")
+            distance = props.get("depth") or props.get("distance")
+            node_type = "table"
+            if "Field" in labels:
+                node_type = "field"
+            elif "Table" in labels:
+                node_type = "table"
+            elif props.get("table_id"):
+                node_type = "field"
+            if business_id:
+                nodes.append(
+                    LineageGraphNode(
+                        id=business_id,
+                        label=label,
+                        type=node_type,
+                        source_id=source_id,
+                        parent_id=parent_id,
+                        ordinal_position=ordinal_position,
+                        distance=distance,
+                    )
+                )
+        if self.db_session and nodes:
+            table_ids = [n.id for n in nodes if n.type == "table"]
+            repo = TableRepository(self.db_session)
+            table_map = await repo.get_tables_with_primary_tags([uuid.UUID(t) for t in table_ids]) if table_ids else {}
+            enriched = []
+            for n in nodes:
+                extra = table_map.get(str(n.id)) or {}
+                enriched.append(
+                    LineageGraphNode(
+                        id=n.id,
+                        label=n.label,
+                        type=n.type,
+                        source_id=n.source_id or extra.get("source_id"),
+                        parent_id=n.parent_id,
+                        ordinal_position=n.ordinal_position,
+                        distance=n.distance,
+                        primary_tag=extra.get("primary_tag"),
+                        source_name=extra.get("source_name"),
+                    )
+                )
+            nodes = enriched
+        return nodes
+
+    def _convert_edges(self, raw_edges: list[Any]) -> list[LineageGraphEdge]:
+        edges: list[LineageGraphEdge] = []
+        for rel in raw_edges or []:
+            data = rel if hasattr(rel, "items") else {}
+            rel_id = data.get("id")
+            start_id = data.get("from") or data.get("start") or data.get("start_id")
+            end_id = data.get("to") or data.get("end") or data.get("end_id")
+            lineage_source = data.get("lineage_source")
+            confidence = data.get("confidence")
+            rel_type = data.get("rel_type")
+            edge_type = "field" if rel_type == "DERIVES_FROM" else "table"
+            if not start_id or not end_id:
+                continue
+            edges.append(
+                LineageGraphEdge(
+                    id=str(rel_id) if rel_id is not None else "",
+                    from_=start_id,
+                    to=end_id,
+                    type=edge_type,
+                    lineage_source=lineage_source,
+                    confidence=confidence,
+                    metadata={"rel_type": rel_type} if rel_type else {},
+                )
+            )
+        return edges
 
     async def _to_graph(self, record) -> LineageGraphResponse:
         # always return root node even if no edges

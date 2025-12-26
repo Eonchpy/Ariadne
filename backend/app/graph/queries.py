@@ -115,3 +115,25 @@ RETURN down.id AS field_id,
        length(path) AS distance
 ORDER BY distance ASC
 """
+
+ALL_PATHS = """
+// Find all simple paths (up to max_depth) between arbitrary nodes (Table or Field)
+MATCH (startNode {id: $start_id}), (endNode {id: $end_id})
+CALL apoc.algo.allSimplePaths(startNode, endNode, 'FEEDS_INTO|DERIVES_FROM>', $max_depth) YIELD path
+RETURN path
+"""
+
+SHORTEST_PATHS = """
+// Shortest paths between arbitrary nodes (Table or Field)
+MATCH (startNode {id: $start_id}), (endNode {id: $end_id})
+CALL apoc.algo.dijkstra(startNode, endNode, 'FEEDS_INTO|DERIVES_FROM>', 'weight', 1) YIELD path AS path, weight
+RETURN path
+"""
+
+CYCLES_BY_TABLE = """
+// Find cycles reachable from a given table (or all if table_id is null)
+MATCH (t:Table)
+WHERE $table_id IS NULL OR t.id = $table_id
+CALL apoc.algo.allSimplePaths(t, t, 'FEEDS_INTO>', $max_depth) YIELD path
+RETURN path
+"""

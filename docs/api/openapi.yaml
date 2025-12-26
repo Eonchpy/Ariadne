@@ -734,6 +734,109 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /lineage/paths:
+    get:
+      tags: [lineage]
+      summary: Find paths between two nodes
+      parameters:
+        - in: query
+          name: start_node_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: end_node_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: max_depth
+          schema: { type: integer, default: 20, minimum: 1 }
+        - in: query
+          name: shortest_only
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Paths result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PathsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/cycles:
+    get:
+      tags: [lineage]
+      summary: Detect cycles in lineage graph
+      parameters:
+        - in: query
+          name: table_id
+          schema: { type: string, format: uuid, nullable: true }
+        - in: query
+          name: max_depth
+          schema: { type: integer, default: 10, minimum: 1 }
+      responses:
+        '200':
+          description: Cycle list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CycleListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/analysis:
+    get:
+      tags: [lineage]
+      summary: Impact or root-cause analysis
+      parameters:
+        - in: query
+          name: node_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: direction
+          schema: { type: string, enum: [upstream, downstream], default: downstream }
+        - in: query
+          name: depth
+          schema: { type: integer, default: 5, minimum: 1 }
+      responses:
+        '200':
+          description: Analysis subgraph and summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpactAnalysisResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /lineage/analysis/blast-radius/{table_id}:
+    get:
+      tags: [lineage]
+      summary: Blast radius impact analysis
+      parameters:
+        - in: path
+          name: table_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: direction
+          schema: { type: string, enum: [upstream, downstream], default: downstream }
+        - in: query
+          name: depth
+          schema: { type: integer, default: 5, minimum: 1, maximum: 20 }
+        - in: query
+          name: granularity
+          schema: { type: string, enum: [table, field], default: table }
+      responses:
+        '200':
+          description: Blast radius result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlastRadiusResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /bulk/import:
     post:
       tags: [import_export]
@@ -1713,6 +1816,77 @@ components:
           items:
             $ref: '#/components/schemas/LineageGraphEdge'
 
+    PathItem:
+      type: object
+      properties:
+        path:
+          type: array
+          items: { type: string, format: uuid }
+        length:
+          type: integer
+
+    PathsResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphEdge' }
+        paths:
+          type: array
+          items: { $ref: '#/components/schemas/PathItem' }
+
+    CycleListResponse:
+      type: object
+      properties:
+        cycles:
+          type: array
+          items:
+            type: array
+            items: { type: string, format: uuid }
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphEdge' }
+
+    ImpactNodeSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        distance:
+          type: integer
+        type:
+          type: string
+        primary_tag:
+          type: object
+        source_name:
+          type: string
+
+    ImpactAnalysisResponse:
+      type: object
+      properties:
+        root_id:
+          type: string
+        direction:
+          type: string
+        depth:
+          type: integer
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphEdge' }
+        impacted:
+          type: array
+          items: { $ref: '#/components/schemas/ImpactNodeSummary' }
+
     TracePathItem:
       type: object
       properties:
@@ -1794,15 +1968,56 @@ components:
     ImpactAnalysisResponse:
       type: object
       properties:
-        table_id:
-          type: string
-          format: uuid
-        change_type:
-          type: string
-        items:
+        root_id: { type: string, format: uuid }
+        direction: { type: string }
+        depth: { type: integer }
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/LineageGraphEdge' }
+        impacted:
+          type: array
+          items: { $ref: '#/components/schemas/ImpactNodeSummary' }
+
+    DomainGroup:
+      type: object
+      properties:
+        tag_id: { type: string, format: uuid, nullable: true }
+        tag_name: { type: string, nullable: true }
+        tag_path: { type: string, nullable: true }
+        table_count: { type: integer }
+        severity: { type: string, enum: [high, medium, low] }
+        sample_tables:
           type: array
           items:
-            $ref: '#/components/schemas/ImpactAnalysisItem'
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              distance: { type: integer }
+
+    BlastRadiusResponse:
+      type: object
+      properties:
+        root_id: { type: string, format: uuid }
+        direction: { type: string, enum: [upstream, downstream] }
+        depth: { type: integer }
+        granularity: { type: string, enum: [table, field] }
+        total_impacted_tables: { type: integer }
+        total_impacted_fields: { type: integer }
+        total_impacted_domains: { type: integer }
+        max_depth_reached: { type: integer }
+        severity_level: { type: string, enum: [high, medium, low] }
+        domain_groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/DomainGroup'
+        depth_map:
+          type: object
+          additionalProperties:
+            type: integer
 
     BulkImportResponse:
       type: object
