@@ -164,3 +164,19 @@ class BlastRadiusResponse(BaseModel):
     severity_level: Literal["high", "medium", "low"]
     domain_groups: list[DomainGroup] = Field(default_factory=list)
     depth_map: dict[int, int] = Field(default_factory=dict)
+
+
+class QualityCheckNode(BaseModel):
+    id: str
+    name: Optional[str] = None
+    primary_tag_path: Optional[str] = None
+    source_name: Optional[str] = None
+    type: Literal["table", "field"] = "table"
+
+
+class QualityCheckResponse(BaseModel):
+    has_cycles: bool
+    cycles: list[list[QualityCheckNode]] = Field(default_factory=list)
+    severity_level: Literal["high", "low"]
+    issue_count: int
+    audit_timestamp: str
