@@ -93,7 +93,7 @@ async def get_graph(
 
 @router.delete("/{rel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lineage(
-    rel_id: int,
+    rel_id: str,
     driver=Depends(neo4j_dependency),
     current_user: Annotated[User, Depends(deps.get_current_user)] = None,
 ):
@@ -160,3 +160,14 @@ async def blast_radius(
 ):
     service = LineageService(driver, db_session=session)
     return await service.blast_radius(table_id=table_id, direction=direction, depth=depth, granularity=granularity)
+
+
+@router.get("/analysis/quality-check/{table_id}")
+async def quality_check(
+    table_id: str,
+    depth: int = 10,
+    driver=Depends(neo4j_dependency),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = LineageService(driver, db_session=session)
+    return await service.quality_check(table_id=table_id, max_depth=depth)

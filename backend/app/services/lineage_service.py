@@ -146,9 +146,13 @@ class LineageService:
     async def get_downstream(self, table_id: str, depth: int, granularity: str = "table") -> LineageGraphResponse:
         return await self.get_graph(table_id, depth=depth, direction="downstream")
 
-    async def delete_lineage(self, rel_id: int) -> None:
+    async def delete_lineage(self, rel_id: str) -> None:
+        try:
+            rel_int = int(rel_id)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid relationship id")
         async with self.driver.session() as session:
-            result = await session.run(queries.DELETE_LINEAGE, rel_id=rel_id)
+            result = await session.run(queries.DELETE_LINEAGE, rel_id=rel_int)
             record = await result.single()
             deleted = record["deleted_count"] if record else 0
             if not deleted:
@@ -435,6 +439,68 @@ class LineageService:
             severity_level=overall_sev,
             domain_groups=groups_out,
             depth_map=depth_map,
+        )
+
+    async def quality_check(self, table_id: str, max_depth: int = 10):
+        async with self.driver.session() as session:
+            result = await session.run(queries.QUALITY_CHECK_CYCLES, table_id=table_id, max_depth=max_depth)
+            paths_raw: list[list[str]] = []
+            nodes_seen: dict[str, Any] = {}
+            async for record in result:
+                path = record["path"]
+                if not path:
+                    continue
+                node_ids = []
+                for n in path.nodes:
+                    nid = n.get("id")
+                    if nid:
+                        node_ids.append(nid)
+                        if nid not in nodes_seen:
+                            nodes_seen[nid] = n
+                if node_ids:
+                    paths_raw.append(node_ids)
+
+        # enrich nodes
+        nodes_enriched = await self._convert_nodes(list(nodes_seen.values()))
+        node_map = {str(n.id): n for n in nodes_enriched}
+
+        def to_qc_node(n: LineageGraphNode):
+            primary_path = None
+            if n.primary_tag:
+                primary_path = n.primary_tag.get("path")
+            return {
+                "id": str(n.id),
+                "name": n.label,
+                "primary_tag_path": primary_path,
+                "source_name": n.source_name,
+                "type": n.type,
+            }
+
+        cycles_out: list[list[dict[str, Any]]] = []
+        seen_set = set()
+        for ids in paths_raw:
+            key = tuple(ids)
+            if key in seen_set:
+                continue
+            seen_set.add(key)
+            cycle_nodes = []
+            for nid in ids:
+                if nid in node_map:
+                    cycle_nodes.append(to_qc_node(node_map[nid]))
+            if cycle_nodes:
+                cycles_out.append(cycle_nodes)
+
+        has_cycles = len(cycles_out) > 0
+        severity = "high" if has_cycles else "low"
+        from datetime import datetime, timezone
+        from app.schemas.lineage import QualityCheckResponse  # local import
+
+        return QualityCheckResponse(
+            has_cycles=has_cycles,
+            cycles=cycles_out,
+            severity_level=severity,
+            issue_count=len(cycles_out),
+            audit_timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     async def _convert_nodes(self, raw_nodes: list[Any]) -> list[LineageGraphNode]:
