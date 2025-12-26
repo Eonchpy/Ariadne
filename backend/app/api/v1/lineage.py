@@ -18,6 +18,7 @@ from app.services.lineage_service import LineageService
 from app.graph.client import neo4j_dependency
 from app.db import get_db_session
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.cache import redis_dependency
 
 router = APIRouter(prefix="/lineage", tags=["lineage"])
 
@@ -26,9 +27,10 @@ router = APIRouter(prefix="/lineage", tags=["lineage"])
 async def create_table_lineage(
     payload: TableLineageCreateRequest,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     current_user: Annotated[User, Depends(deps.get_current_user)] = None,
 ):
-    service = LineageService(driver)
+    service = LineageService(driver, redis=redis)
     return await service.create_table_lineage(
         source_table_id=payload.source_table_id,
         target_table_id=payload.target_table_id,
@@ -43,9 +45,10 @@ async def create_table_lineage(
 async def create_field_lineage(
     payload: FieldLineageCreateRequest,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     current_user: Annotated[User, Depends(deps.get_current_user)] = None,
 ):
-    service = LineageService(driver)
+    service = LineageService(driver, redis=redis)
     return await service.create_field_lineage(
         source_field_id=payload.source_field_id,
         target_field_id=payload.target_field_id,
@@ -61,9 +64,10 @@ async def get_upstream(
     depth: int = 3,
     granularity: str = "table",
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.get_upstream(table_id, depth, granularity)
 
 
@@ -73,9 +77,10 @@ async def get_downstream(
     depth: int = 3,
     granularity: str = "table",
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.get_downstream(table_id, depth, granularity)
 
 
@@ -85,9 +90,10 @@ async def get_graph(
     direction: str = "downstream",
     depth: int = 3,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.get_graph(table_id=table_id, depth=depth, direction=direction)
 
 
@@ -95,9 +101,10 @@ async def get_graph(
 async def delete_lineage(
     rel_id: str,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     current_user: Annotated[User, Depends(deps.get_current_user)] = None,
 ):
-    service = LineageService(driver)
+    service = LineageService(driver, redis=redis)
     await service.delete_lineage(rel_id)
 
 
@@ -107,9 +114,10 @@ async def trace_field(
     direction: str = "both",
     depth: int = 5,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.trace_field(field_id=field_id, direction=direction, depth=depth)
 
 
@@ -120,9 +128,10 @@ async def find_paths(
     max_depth: int = 20,
     shortest_only: bool = False,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.find_paths(start_id=start_node_id, end_id=end_node_id, max_depth=max_depth, shortest_only=shortest_only)
 
 
@@ -131,9 +140,10 @@ async def find_cycles(
     table_id: str | None = None,
     max_depth: int = 10,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.find_cycles(table_id=table_id, max_depth=max_depth)
 
 
@@ -143,9 +153,10 @@ async def impact_analysis(
     direction: str = "downstream",
     depth: int = 5,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.impact_analysis(node_id=node_id, direction=direction, depth=depth)
 
 
@@ -156,9 +167,10 @@ async def blast_radius(
     depth: int = 5,
     granularity: str = "table",
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.blast_radius(table_id=table_id, direction=direction, depth=depth, granularity=granularity)
 
 
@@ -167,7 +179,8 @@ async def quality_check(
     table_id: str,
     depth: int = 10,
     driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
     session: AsyncSession = Depends(get_db_session),
 ):
-    service = LineageService(driver, db_session=session)
+    service = LineageService(driver, db_session=session, redis=redis)
     return await service.quality_check(table_id=table_id, max_depth=depth)

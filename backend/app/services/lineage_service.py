@@ -1,10 +1,13 @@
 import uuid
+import json
+import hashlib
 from collections import deque
 from typing import Any
 
 from fastapi import HTTPException, status
 from neo4j import AsyncDriver
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.asyncio import Redis
 
 from app.schemas.lineage import (
     FieldTraceResponse,
@@ -14,6 +17,8 @@ from app.schemas.lineage import (
     PathsResponse,
     CycleListResponse,
     ImpactAnalysisResponse,
+    BlastRadiusResponse,
+    QualityCheckResponse,
     LineageGraphResponse,
     LineageGraphNode,
     LineageGraphEdge,
@@ -30,9 +35,33 @@ log = structlog.get_logger(__name__)
 
 
 class LineageService:
-    def __init__(self, driver: AsyncDriver, db_session: AsyncSession | None = None):
+    def __init__(self, driver: AsyncDriver, db_session: AsyncSession | None = None, redis: Redis | None = None):
         self.driver = driver
         self.db_session = db_session
+        self.redis = redis
+
+    # ---- cache helpers ----
+    def _cache_key(self, prefix: str, params: dict[str, Any]) -> str:
+        packed = json.dumps(params, sort_keys=True, default=str)
+        digest = hashlib.sha1(packed.encode("utf-8")).hexdigest()
+        return f"{prefix}:{digest}"
+
+    async def _cache_get(self, key: str):
+        if not self.redis:
+            return None
+        return await self.redis.get(key)
+
+    async def _cache_set(self, key: str, value: Any, ttl: int):
+        if not self.redis:
+            return
+        await self.redis.set(key, json.dumps(value, default=str), ex=ttl)
+
+    async def _cache_flush_prefixes(self, prefixes: list[str]):
+        if not self.redis:
+            return
+        for prefix in prefixes:
+            async for k in self.redis.scan_iter(match=f"{prefix}*"):
+                await self.redis.delete(k)
 
     async def sync_table_node(self, table: dict[str, Any]) -> None:
         async with self.driver.session() as session:
@@ -86,6 +115,7 @@ class LineageService:
             record = await result.single()
             rel_id = record["rel_id"] if record else None
 
+        await self._cache_flush_prefixes(["lineage:", "blast:", "qc:", "paths:", "trace:"])
         return LineageRelationship(
             id=str(rel_id) if rel_id is not None else str(uuid.uuid4()),
             source_node_id=source_table_id,
@@ -116,6 +146,7 @@ class LineageService:
             record = await result.single()
             rel_id = record["rel_id"] if record else None
 
+        await self._cache_flush_prefixes(["lineage:", "blast:", "qc:", "paths:", "trace:"])
         return LineageRelationship(
             id=str(rel_id) if rel_id is not None else str(uuid.uuid4()),
             source_node_id=source_field_id,
@@ -132,13 +163,22 @@ class LineageService:
         elif direction == "both":
             rel_filter = "FEEDS_INTO>|<FEEDS_INTO"
 
+        cache_key = self._cache_key("lineage:graph", {"table_id": table_id, "direction": direction, "depth": depth})
+        cached = await self._cache_get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return LineageGraphResponse(**data)
+
         async with self.driver.session() as session:
             result = await session.run(queries.GET_GRAPH, table_id=table_id, depth=depth, rel_filter=rel_filter)
             record = await result.single()
             if record is None:
-                # Fallback: return the focal table node if it exists in PG even when Neo4j has no entry yet.
-                return await self._root_only_graph(table_id)
-            return await self._to_graph(record)
+                graph = await self._root_only_graph(table_id)
+            else:
+                graph = await self._to_graph(record)
+
+        await self._cache_set(cache_key, graph.model_dump(), ttl=120)
+        return graph
 
     async def get_upstream(self, table_id: str, depth: int, granularity: str = "table") -> LineageGraphResponse:
         return await self.get_graph(table_id, depth=depth, direction="upstream")
@@ -160,10 +200,16 @@ class LineageService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Lineage relationship not found",
                 )
+        await self._cache_flush_prefixes(["lineage:", "blast:", "qc:", "paths:", "trace:"])
 
     async def trace_field(self, field_id: str, direction: str = "both", depth: int = 5) -> FieldTraceResponse:
         if not self.db_session:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB session required")
+
+        cache_key = self._cache_key("trace", {"field_id": field_id, "direction": direction, "depth": depth})
+        cached = await self._cache_get(cache_key)
+        if cached:
+            return FieldTraceResponse(**json.loads(cached))
 
         field_repo = FieldRepository(self.db_session)
         table_repo = TableRepository(self.db_session)
@@ -222,12 +268,14 @@ class LineageService:
         involved_fields = [field_ref.id] + [item.field_id for item in upstream_items + downstream_items]
         involved_fields = [f for f in dict.fromkeys(involved_fields) if f]
 
-        return FieldTraceResponse(
+        response = FieldTraceResponse(
             field=field_ref,
             trace_path=TracePath(upstream=upstream_items, downstream=downstream_items),
             involved_tables=involved_tables,
             involved_fields=involved_fields,
         )
+        await self._cache_set(cache_key, response.model_dump(), ttl=120)
+        return response
 
     async def find_paths(
         self,
@@ -236,6 +284,13 @@ class LineageService:
         max_depth: int = 20,
         shortest_only: bool = False,
     ) -> PathsResponse:
+        cache_key = self._cache_key(
+            "paths", {"start_id": start_id, "end_id": end_id, "max_depth": max_depth, "shortest_only": shortest_only}
+        )
+        cached = await self._cache_get(cache_key)
+        if cached:
+            return PathsResponse(**json.loads(cached))
+
         async with self.driver.session() as session:
             query = queries.SHORTEST_PATHS if shortest_only else queries.ALL_PATHS
             result = await session.run(query, start_id=start_id, end_id=end_id, max_depth=max_depth)
@@ -260,11 +315,11 @@ class LineageService:
                         props["distance"] = idx
                         props.setdefault("id", nid)
                         nodes_seen[nid] = props
-                    for r in rels_in_path:
-                        rid = str(r.id)
-                        if rid not in edges_seen:
-                            edges_seen[rid] = {
-                                "id": rid,
+                for r in rels_in_path:
+                    rid = str(r.id)
+                    if rid not in edges_seen:
+                        edges_seen[rid] = {
+                            "id": rid,
                             "from": r.start_node["id"],
                             "to": r.end_node["id"],
                             "lineage_source": r.get("lineage_source"),
@@ -274,13 +329,20 @@ class LineageService:
 
         nodes = await self._convert_nodes(list(nodes_seen.values()))
         edges = self._convert_edges(list(edges_seen.values()))
-        return PathsResponse(
+        response = PathsResponse(
             nodes=nodes,
             edges=edges,
             paths=[{"path": p["path"], "length": p.get("length")} for p in paths],
         )
+        await self._cache_set(cache_key, response.model_dump(), ttl=120)
+        return response
 
     async def find_cycles(self, table_id: str | None = None, max_depth: int = 10) -> CycleListResponse:
+        cache_key = self._cache_key("qc:cycles", {"table_id": table_id, "max_depth": max_depth})
+        cached = await self._cache_get(cache_key)
+        if cached:
+            return CycleListResponse(**json.loads(cached))
+
         async with self.driver.session() as session:
             result = await session.run(queries.CYCLES_BY_TABLE, table_id=table_id, max_depth=max_depth)
             cycles = []
@@ -311,7 +373,9 @@ class LineageService:
 
         nodes = await self._convert_nodes(list(nodes_seen.values()))
         edges = self._convert_edges(list(edges_seen.values()))
-        return CycleListResponse(cycles=cycles, nodes=nodes, edges=edges)
+        response = CycleListResponse(cycles=cycles, nodes=nodes, edges=edges)
+        await self._cache_set(cache_key, response.model_dump(), ttl=60)
+        return response
 
     async def impact_analysis(self, node_id: str, direction: str = "downstream", depth: int = 5) -> ImpactAnalysisResponse:
         # reuse get_graph with direction; gather impacted nodes list
@@ -345,6 +409,13 @@ class LineageService:
         depth: int = 5,
         granularity: str = "table",
     ):
+        cache_key = self._cache_key(
+            "blast", {"table_id": table_id, "direction": direction, "depth": depth, "granularity": granularity}
+        )
+        cached = await self._cache_get(cache_key)
+        if cached:
+            return BlastRadiusResponse(**json.loads(cached))
+
         # Get graph in the desired direction/depth
         graph = await self.get_graph(table_id=table_id, depth=depth, direction=direction)
 
@@ -425,9 +496,7 @@ class LineageService:
 
         overall_sev = severity_for(total_tables)
 
-        from app.schemas.lineage import BlastRadiusResponse  # local import to avoid cycle
-
-        return BlastRadiusResponse(
+        response = BlastRadiusResponse(
             root_id=table_id,
             direction=direction,
             depth=depth,
@@ -440,8 +509,15 @@ class LineageService:
             domain_groups=groups_out,
             depth_map=depth_map,
         )
+        await self._cache_set(cache_key, response.model_dump(), ttl=120)
+        return response
 
     async def quality_check(self, table_id: str, max_depth: int = 10):
+        cache_key = self._cache_key("qc", {"table_id": table_id, "max_depth": max_depth})
+        cached = await self._cache_get(cache_key)
+        if cached:
+            return QualityCheckResponse(**json.loads(cached))
+
         async with self.driver.session() as session:
             result = await session.run(queries.QUALITY_CHECK_CYCLES, table_id=table_id, max_depth=max_depth)
             paths_raw: list[list[str]] = []
@@ -493,15 +569,15 @@ class LineageService:
         has_cycles = len(cycles_out) > 0
         severity = "high" if has_cycles else "low"
         from datetime import datetime, timezone
-        from app.schemas.lineage import QualityCheckResponse  # local import
-
-        return QualityCheckResponse(
+        response = QualityCheckResponse(
             has_cycles=has_cycles,
             cycles=cycles_out,
             severity_level=severity,
             issue_count=len(cycles_out),
             audit_timestamp=datetime.now(timezone.utc).isoformat(),
         )
+        await self._cache_set(cache_key, response.model_dump(), ttl=60 if has_cycles else 30)
+        return response
 
     async def _convert_nodes(self, raw_nodes: list[Any]) -> list[LineageGraphNode]:
         nodes: list[LineageGraphNode] = []
