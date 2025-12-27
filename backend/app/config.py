@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     # Oracle thick client (optional)
     ORACLE_CLIENT_LIB_DIR: str | None = "/Users/shenshunan/projects/Ariadne/tools/oracle"
 
+    # LLM / AI
+    LLM_PROVIDER: str = "deepseek"
+    LLM_API_BASE: str = "https://api.deepseek.com"
+    LLM_API_KEY: str | None = None
+    LLM_MODEL: str = "deepseek-chat"
+    LLM_TIMEOUT: int = 30
+    LLM_TEMPERATURE: float = 0.2
+    LLM_MAX_TOKENS: int | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

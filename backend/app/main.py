@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.logging import configure_logging
-from app.api.v1 import auth, users, sources, tables, fields, audit, lineage, bulk, tags
+from app.api.v1 import auth, users, sources, tables, fields, audit, lineage, bulk, tags, ai
 from app.db import SessionLocal
 from app.repositories.user_repo import UserRepository
 from app.models.user import User
@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(lineage.router, prefix=api_prefix)
     app.include_router(bulk.router, prefix=api_prefix)
     app.include_router(tags.router, prefix=api_prefix)
+    app.include_router(ai.router, prefix=api_prefix)
 
     @app.get("/health")
     async def health():
