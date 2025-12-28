@@ -1,5 +1,6 @@
 fastapi==0.115.3
-uvicorn[standard]==0.32.0
+#uvicorn[standard]==0.32.0
+uvicorn[standard]==0.35.0
 python-multipart>=0.0.19
 sqlalchemy[asyncio]==2.0.36
 alembic==1.15.0
@@ -7,7 +8,7 @@ asyncpg==0.31.0
 pgvector==0.3.2
 neo4j==5.28.2
 redis==5.2.1
-pydantic==2.10.0
+pydantic==2.9.2
 pydantic-settings==2.7.0
 email-validator==2.2.0
 PyJWT>=2.10.0
@@ -16,7 +17,8 @@ passlib[bcrypt]==1.7.4
 structlog==25.1.0
 openpyxl==3.1.5
 pyyaml==6.0.2
-python-dotenv==1.0.1
+#python-dotenv==1.0.1
+python-dotenv>=1.1.0
 bcrypt==4.2.0
 schemathesis==4.7.5
 oracledb>=1.4.0
@@ -27,3 +29,5 @@ elasticsearch==7.17.9
 pandas>=2.2.3
 numpy>=1.26.0
 aiomysql>=0.2.0
+openai>=1.6,<2.0
+fastmcp>=2.9

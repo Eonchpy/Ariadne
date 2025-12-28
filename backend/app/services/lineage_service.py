@@ -552,15 +552,26 @@ class LineageService:
                 "type": n.type,
             }
 
+        def canonical_cycle(ids: list[str]) -> tuple[str, ...]:
+            # drop trailing duplicate of first if present
+            core = ids[:-1] if len(ids) > 1 and ids[0] == ids[-1] else ids[:]
+            if not core:
+                return tuple()
+            n = len(core)
+            rotations = [tuple(core[i:] + core[:i]) for i in range(n)]
+            rcore = list(reversed(core))
+            rotations += [tuple(rcore[i:] + rcore[:i]) for i in range(n)]
+            return min(rotations)
+
         cycles_out: list[list[dict[str, Any]]] = []
         seen_set = set()
         for ids in paths_raw:
-            key = tuple(ids)
-            if key in seen_set:
+            key = canonical_cycle(ids)
+            if not key or key in seen_set:
                 continue
             seen_set.add(key)
             cycle_nodes = []
-            for nid in ids:
+            for nid in key:
                 if nid in node_map:
                     cycle_nodes.append(to_qc_node(node_map[nid]))
             if cycle_nodes:

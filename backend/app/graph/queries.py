@@ -139,11 +139,15 @@ RETURN path
 """
 
 QUALITY_CHECK_CYCLES = """
-// Cycles starting and ending at the focal table, following lineage relationships (both directions)
+// Directed cycles starting/ending at the focal node, respecting edge direction and bounded depth
 MATCH (root {id: $table_id})
-MATCH path = (root)-[:FEEDS_INTO|DERIVES_FROM*1..20]-(root)
-WHERE length(path) <= $max_depth
-  AND size(nodes(path)) > 1
-  AND size(apoc.coll.toSet(nodes(path))) = size(nodes(path)) - 1
+CALL apoc.nodes.cycles(
+  [root],
+  {
+    maxDepth: $max_depth,
+    relationshipFilter: 'FEEDS_INTO>|DERIVES_FROM>',
+    filterStartNode: true
+  }
+) YIELD path
 RETURN path
 """

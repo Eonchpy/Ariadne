@@ -11,6 +11,25 @@ class TableRepository(BaseRepository[MetadataTable]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, MetadataTable)
 
+    async def search_by_name(self, keyword: str, limit: int = 20):
+        """Search tables by name (case-insensitive, contains)."""
+        pattern = f"%{keyword}%"
+        stmt = select(MetadataTable).where(MetadataTable.name.ilike(pattern)).limit(limit)
+        res = await self.session.execute(stmt)
+        return res.scalars().all()
+
+    async def get_by_name_exact(self, name: str):
+        stmt = select(MetadataTable).where(MetadataTable.name == name)
+        res = await self.session.execute(stmt)
+        return res.scalars().first()
+
+    async def get_by_name_normalized(self, name: str):
+        """Case-insensitive exact match using name_normalized."""
+        normalized = name.lower()
+        stmt = select(MetadataTable).where(MetadataTable.name_normalized == normalized)
+        res = await self.session.execute(stmt)
+        return res.scalars().first()
+
     async def get_tables_with_primary_tags(self, table_ids: list[uuid.UUID]) -> dict[str, dict]:
         """Return mapping of table_id -> {primary_tag, primary_tag_id, source_name, source_id, name}."""
         if not table_ids:

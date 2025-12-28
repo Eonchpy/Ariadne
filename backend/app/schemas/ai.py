@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AIMessage(BaseModel):
@@ -13,8 +13,15 @@ class AIMessage(BaseModel):
 
 class AIChatRequest(BaseModel):
     conversation_id: Optional[str] = None
-    query: str
-    stream: bool = False
+    query: Optional[str] = None
+    message: Optional[str] = Field(default=None, exclude=True)
+    stream: bool = True
+
+    @model_validator(mode="after")
+    def fill_query_from_message(self):
+        if not self.query and self.message:
+            self.query = self.message
+        return self
 
 
 class AIChatResponse(BaseModel):

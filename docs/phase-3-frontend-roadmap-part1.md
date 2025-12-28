@@ -98,3 +98,13 @@ Enhance the lineage visualization with path analysis, impact assessment, and per
 ---
 
 **Next**: Week 10 - Impact Analysis & Root Cause UI (Part 2/3)
+
+
+
+- 优化提示词与输出：在 system prompt 禁止伪代码，限制工具选择；对 DSML/非 JSON 输出做
+    过滤兜底。
+  - MCP 健康管理：给 _ensure_mcp 加探活/单例防重复启动，关闭时清理子进程；对 MCP 调用错
+    误返回明确提示。
+  - 日志与监控：记录每次 tool_call 的时长、请求表名/ID、异常，便于回归。
+  - 缓存策略：工具结果（血缘、qc）可复用现有 Redis 缓存，避免重复算。
+  - 前端联调：验证表名大小写不敏感解析已生效。

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography } from 'antd';
-import { 
-  MenuFoldOutlined, 
-  MenuUnfoldOutlined, 
-  UserOutlined, 
+import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography, Tooltip } from 'antd';
+import {
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  UserOutlined,
   LogoutOutlined,
   DatabaseOutlined,
   DashboardOutlined,
@@ -16,11 +16,12 @@ import {
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import ChatSidebar from '@/components/ai/ChatSidebar';
 
 const { Header, Sider, Content, Footer } = Layout;
-
 export const MainLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [chatVisible, setChatVisible] = useState(false);
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -72,11 +73,6 @@ export const MainLayout: React.FC = () => {
       icon: <CloudUploadOutlined />,
       label: <Link to="/import">Bulk Import</Link>,
     },
-    {
-      key: '/ai',
-      icon: <RobotOutlined />,
-      label: <Link to="/ai">AI Assistant</Link>,
-    },
   ];
 
   if (isAdmin) {
@@ -102,7 +98,7 @@ export const MainLayout: React.FC = () => {
         icon: <UserOutlined />,
       },
       {
-        type: 'divider',
+        type: 'divider' as const,
       },
       {
         key: 'logout',
@@ -148,10 +144,20 @@ export const MainLayout: React.FC = () => {
             onClick={() => setCollapsed(!collapsed)}
             style={{ fontSize: '16px', width: 64, height: 64 }}
           />
-          <Space>
-            <Typography.Text>{user?.name}</Typography.Text>
-            <Dropdown menu={userMenu as any} placement="bottomRight">
-              <Avatar icon={<UserOutlined />} style={{ cursor: 'pointer' }} />
+          <Space size="middle">
+            <Tooltip title="Ariadne AI Assistant">
+              <Button 
+                type="text" 
+                icon={<RobotOutlined style={{ fontSize: '20px', color: chatVisible ? '#1890ff' : 'inherit' }} />} 
+                onClick={() => setChatVisible(true)}
+                style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              />
+            </Tooltip>
+            <Dropdown menu={userMenu} placement="bottomRight" arrow>
+              <Space style={{ cursor: 'pointer' }}>
+                <Avatar icon={<UserOutlined />} />
+                <Typography.Text strong>{user?.name}</Typography.Text>
+              </Space>
             </Dropdown>
           </Space>
         </Header>
@@ -168,6 +174,7 @@ export const MainLayout: React.FC = () => {
         </Content>
         <Footer style={{ textAlign: 'center' }}>Ariadne ©2025</Footer>
       </Layout>
+      <ChatSidebar open={chatVisible} onClose={() => setChatVisible(false)} />
     </Layout>
   );
 };

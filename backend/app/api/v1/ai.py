@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api import deps
 from app.schemas.user import User
-from app.schemas.ai import AIChatRequest, AIChatResponse
+from app.schemas.ai import AIChatRequest, AIChatResponse, AIMessage
 from app.schemas.conversation import ConversationCreate, ConversationListItem, ConversationDetail, ConversationMessage
 from app.core.llm_client import LLMClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,8 +12,12 @@ from app.db import get_db_session
 from app.repositories.conversation_repo import ConversationRepository, MessageRepository
 import uuid
 import json
-import asyncio
 from app.services.ai_service import AIService
+from app.graph.client import neo4j_dependency
+from app.core.cache import redis_dependency
+from redis.asyncio import Redis
+from neo4j import AsyncDriver
+from app.prompts.system_prompt import METADATA_ASSISTANT_SYSTEM_PROMPT
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -23,17 +27,50 @@ async def chat(
     payload: AIChatRequest,
     current_user: Annotated[User, Depends(deps.get_current_user)] = None,
     session: AsyncSession = Depends(get_db_session),
+    driver: AsyncDriver = Depends(neo4j_dependency),
+    redis: Redis | None = Depends(redis_dependency),
 ):
     if not payload.query:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="query is required")
-    svc = AIService(session)
-    # For now: non-stream structured echo; if stream=True, use SSE
+    svc = AIService(session, neo4j_driver=driver, redis=redis)
+
+    # Non-stream: simple echo for now (can be upgraded to sync LLM)
     if not payload.stream:
         return await svc.simple_echo(uuid.UUID(current_user.id), payload.query, payload.conversation_id)
 
     async def event_stream():
-        async for chunk in svc.sse_placeholder(payload.query):
-            yield chunk
+        # status start
+        yield f"event: status\ndata: {json.dumps({'message': 'Thinking...', 'tool': 'llm', 'progress': 5})}\n\n"
+
+        # Get tools dynamically from MCP server
+        try:
+            tools = await svc.get_mcp_tools_schema()
+        except Exception as e:
+            # Fallback to empty tools if MCP server is not available
+            tools = []
+            yield f"event: status\ndata: {json.dumps({'message': f'Warning: MCP tools unavailable ({str(e)})', 'tool': 'system', 'progress': 10})}\n\n"
+
+        # Prepare messages with system prompt
+        base_messages = [
+            {
+                "role": "system",
+                "content": METADATA_ASSISTANT_SYSTEM_PROMPT,
+            },
+            {"role": "user", "content": payload.query},
+        ]
+
+        try:
+            summary, statuses, duration_ms = await svc.run_llm_with_tools(base_messages, tools, stream=False)
+            for st in statuses:
+                yield f"event: status\ndata: {json.dumps(st)}\n\n"
+            if summary:
+                yield f"event: data\ndata: {json.dumps({'type': 'text', 'content': summary})}\n\n"
+            else:
+                yield f"event: data\ndata: {json.dumps({'type': 'text', 'content': 'AI assistant暂未返回结果，请稍后重试'})}\n\n"
+        except Exception as exc:
+            err = {'type': 'text', 'content': 'AI assistant failed: ' + str(exc)}
+            yield f"event: data\ndata: {json.dumps(err)}\n\n"
+        yield f"event: status\ndata: {json.dumps({'message': 'Done', 'tool': 'llm', 'progress': 100})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
