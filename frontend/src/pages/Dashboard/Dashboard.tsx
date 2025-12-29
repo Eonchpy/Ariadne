@@ -11,11 +11,13 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { tablesApi } from '@/api/endpoints/tables';
 import { useAuthStore } from '@/stores/authStore';
+import { useTranslation } from 'react-i18next';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 const Dashboard: React.FC = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [tables, setTables] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,112 +55,108 @@ const Dashboard: React.FC = () => {
     if (btn) (btn as HTMLElement).click();
   };
 
-  return (
-    <div style={{ 
-      height: '100%', 
-      display: 'flex', 
-      flexDirection: 'column', 
-      alignItems: 'center',
-      padding: '10vh 24px 48px', // Added horizontal padding constraints
-      background: '#ffffff',
-      overflow: 'hidden', // Prevent horizontal scroll
-      position: 'relative'
-    }}>
-      
-      {/* 1. HERO SECTION */}
-      <div style={{ textAlign: 'center', marginBottom: 48, marginTop: 'auto' }}>
-        <img 
-          src="/logo_v2.png" 
-          alt="Ariadne Logo" 
-          style={{ 
-            width: 200, 
-            height: 'auto', 
-            marginBottom: 16
-          }} 
-        />
-        <Title level={2} style={{ marginBottom: 8 }}>
-          Welcome back, {user?.name || 'Traveler'}
-        </Title>
-        <Text type="secondary" style={{ fontSize: 16 }}>
-          Explore your data universe or extend its boundaries.
-        </Text>
-      </div>
-
-      {/* 2. MEGA SEARCH */}
-      <Card 
-        bordered={false} 
-        style={{ 
-          width: '100%', 
-          maxWidth: 600, 
-          boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-          borderRadius: 16
-        }}
-        styles={{ body: { padding: 8 } }}
-      >
-        <Select
-          showSearch
-          size="large"
-          placeholder="Search any table to explore lineage..."
-          optionFilterProp="label"
-          onChange={handleSearch}
-          loading={loading}
-          style={{ width: '100%' }}
-          suffixIcon={<SearchOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
-          variant="borderless"
-          dropdownStyle={{ borderRadius: 12, padding: 8 }}
-        >
-          {tables.map(t => (
-            <Option key={t.id} value={t.id} label={t.name}>
-              <Space>
-                <DatabaseOutlined style={{ color: '#8c8c8c' }} />
-                <span>{t.name}</span>
-                <Text type="secondary" style={{ fontSize: 12 }}>{t.schema_name}</Text>
-              </Space>
-            </Option>
-          ))}
-        </Select>
-      </Card>
-
-      {/* 3. QUICK ACTIONS & AI HINTS */}
-      <Space size="large" style={{ marginTop: 32 }}>
-        <Button 
-          size="large" 
-          icon={<PlusOutlined />} 
-          onClick={() => navigate('/metadata/tables/new')}
-        >
-          Create New Table
-        </Button>
-        <Button 
-          size="large" 
-          icon={<RobotOutlined />} 
-          onClick={openAI}
-        >
-          Ask Assistant
-        </Button>
-      </Space>
-
-      <Space style={{ marginTop: 24 }}>
-        <Tag icon={<ThunderboltOutlined />} color="blue" style={{ cursor: 'pointer' }} onClick={openAI}>
-          Check Impact
-        </Tag>
-        <Tag icon={<SearchOutlined />} color="cyan" style={{ cursor: 'pointer' }} onClick={openAI}>
-          Audit Quality
-        </Tag>
-      </Space>
-
-      {/* 4. MINIMAL STATS FOOTER */}
-      <div style={{ marginTop: 'auto', textAlign: 'center', opacity: 0.6 }}>
-        <Space size={48} split={<span style={{ color: '#d9d9d9' }}>|</span>}>
-          <Space>
-            <DatabaseOutlined /> {stats.totalTables} Assets
+        return (
+          <div style={{ 
+            flex: 1,
+            display: 'flex', 
+            flexDirection: 'column', 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            background: '#ffffff',
+            overflow: 'hidden', 
+            position: 'relative'
+          }}>          
+          {/* 1. HERO SECTION */}
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <img 
+              src="/logo_v2.png" 
+              alt="Ariadne Logo" 
+              style={{ 
+                width: 200, 
+                height: 'auto', 
+                marginBottom: 16
+              }} 
+            />
+            <Title level={2} style={{ marginBottom: 8 }}>
+              {t('dashboard.welcome', { name: user?.name || 'Traveler' })}
+            </Title>
+                    <Text type="secondary" style={{ fontSize: 16 }}>
+                      {t('dashboard.subtitle')}
+                    </Text>
+                  </div>
+            
+                  {/* 2. STATS HUD (Moved Up) */}
+                  <div style={{ marginBottom: 24 }}>
+                    <Space size={24}>
+                      <Tag style={{ padding: '6px 16px', fontSize: '14px', borderRadius: 16 }} color="blue">
+                        <DatabaseOutlined /> <strong>{stats.totalTables}</strong> {t('dashboard.assets')}
+                      </Tag>
+                      <Tag style={{ padding: '6px 16px', fontSize: '14px', borderRadius: 16 }} color="purple">
+                        <ApartmentOutlined /> <strong>{stats.totalSources}</strong> {t('dashboard.sources')}
+                      </Tag>
+                    </Space>
+                  </div>
+            
+                  {/* 3. MEGA SEARCH */}
+                  <Card 
+                    bordered={false} 
+                    style={{ 
+                      width: '100%', 
+                      maxWidth: 600, 
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                      borderRadius: 16
+                    }}
+                    styles={{ body: { padding: 8 } }}
+                  >            <Select
+              showSearch
+              size="large"
+              placeholder={t('dashboard.search_placeholder')}
+              optionFilterProp="label"
+              onChange={handleSearch}
+              loading={loading}
+              style={{ width: '100%' }}
+              suffixIcon={<SearchOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
+              variant="borderless"
+              dropdownStyle={{ borderRadius: 12, padding: 8 }}
+            >
+              {tables.map(t => (
+                <Option key={t.id} value={t.id} label={t.name}>
+                  <Space>
+                    <DatabaseOutlined style={{ color: '#8c8c8c' }} />
+                    <span>{t.name}</span>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{t.schema_name}</Text>
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </Card>
+    
+          {/* 3. QUICK ACTIONS & AI HINTS */}
+          <Space size="large" style={{ marginTop: 32 }}>
+            <Button 
+              size="large" 
+              icon={<PlusOutlined />} 
+              onClick={() => navigate('/metadata/tables/new')}
+            >
+              {t('dashboard.create_table')}
+            </Button>
+            <Button 
+              size="large" 
+              icon={<RobotOutlined />} 
+              onClick={openAI}
+            >
+              {t('dashboard.ask_assistant')}
+            </Button>
           </Space>
-          <Space>
-            <ApartmentOutlined /> {stats.totalSources} Sources
-          </Space>
-        </Space>
-      </div>
-    </div>
-  );
-};
-
-export default Dashboard;
+    
+          <Space style={{ marginTop: 24 }}>
+            <Tag icon={<ThunderboltOutlined />} color="blue" style={{ cursor: 'pointer' }} onClick={openAI}>
+              {t('dashboard.check_impact')}
+            </Tag>
+                    <Tag icon={<SearchOutlined />} color="cyan" style={{ cursor: 'pointer' }} onClick={openAI}>
+                      {t('dashboard.audit_quality')}
+                    </Tag>
+                  </Space>
+                </div>
+              );
+            };export default Dashboard;

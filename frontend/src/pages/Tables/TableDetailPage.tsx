@@ -11,10 +11,12 @@ import type { TableDetail } from '@/types/api';
 import BlastRadius from '@/components/analysis/BlastRadius';
 import QualityCheck from '@/components/analysis/QualityCheck';
 import { Badge } from 'antd';
+import { useTranslation } from 'react-i18next';
 
 const { Title, Text } = Typography;
 
 const TableDetailPage: React.FC = () => {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { sources, fetchSources } = useDataSourceStore();
@@ -94,16 +96,16 @@ const TableDetailPage: React.FC = () => {
   const sourceName = table.source_name || source?.name || 'Connected';
 
   const fieldColumns = [
-    { title: 'Name', dataIndex: 'name', key: 'name', render: (text: string) => <Text strong>{text}</Text> },
-    { title: 'Data Type', dataIndex: 'data_type', key: 'data_type', render: (text: string) => <Tag color="orange">{text}</Tag> },
-    { title: 'Nullable', dataIndex: 'is_nullable', key: 'is_nullable', render: (val: boolean) => val ? 'Yes' : 'No' },
-    { title: 'Primary Key', dataIndex: 'is_primary_key', key: 'pk', render: (val: boolean) => val ? <Tag color="gold">PK</Tag> : null },
-    { title: 'Description', dataIndex: 'description', key: 'description' },
+    { title: t('table_detail.field_name'), dataIndex: 'name', key: 'name', render: (text: string) => <Text strong>{text}</Text> },
+    { title: t('table_detail.data_type'), dataIndex: 'data_type', key: 'data_type', render: (text: string) => <Tag color="orange">{text}</Tag> },
+    { title: t('table_detail.nullable'), dataIndex: 'is_nullable', key: 'is_nullable', render: (val: boolean) => val ? t('table_detail.yes') : t('table_detail.no') },
+    { title: t('table_detail.primary_key'), dataIndex: 'is_primary_key', key: 'pk', render: (val: boolean) => val ? <Tag color="gold">PK</Tag> : null },
+    { title: t('table_detail.description'), dataIndex: 'description', key: 'description' },
   ];
 
   const lineageColumns = (type: 'Source' | 'Target') => [
     { 
-      title: type, 
+      title: type === 'Source' ? 'Source Table' : 'Target Table', 
       key: 'name', 
       render: (_: any, record: any) => (
         <Link to={`/metadata/tables/${record.node?.id}`}>
@@ -112,12 +114,12 @@ const TableDetailPage: React.FC = () => {
       ) 
     },
     { 
-      title: 'Source System', 
+      title: t('table_detail.source_system'), 
       key: 'source', 
       render: (_: any, record: any) => <Tag color="blue">{record.node?.source_name || 'Manual'}</Tag> 
     },
     { 
-      title: 'Transformation', 
+      title: t('table_detail.transformation'), 
       dataIndex: 'label', 
       key: 'type',
       render: (text: string) => <Tag color="green">{text}</Tag>
@@ -127,8 +129,8 @@ const TableDetailPage: React.FC = () => {
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Breadcrumb items={[
-        { title: <Link to="/">Home</Link> },
-        { title: <Link to="/metadata/tables">Tables</Link> },
+        { title: <Link to="/">{t('common.dashboard')}</Link> },
+        { title: <Link to="/metadata/tables">{t('common.tables')}</Link> },
         { title: table.name },
       ]} />
 
@@ -143,8 +145,8 @@ const TableDetailPage: React.FC = () => {
           </Space>
         </Space>
         <Space>
-          <Button icon={<NodeIndexOutlined />} onClick={() => navigate(`/lineage/${table.id}`)}>View Graph</Button>
-          <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/metadata/tables/${table.id}/edit`)}>Edit</Button>
+          <Button icon={<NodeIndexOutlined />} onClick={() => navigate(`/lineage/${table.id}`)}>{t('table_detail.view_graph')}</Button>
+          <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/metadata/tables/${table.id}/edit`)}>{t('table_detail.edit')}</Button>
         </Space>
       </div>
 
@@ -154,14 +156,14 @@ const TableDetailPage: React.FC = () => {
           items={[
             {
               key: 'schema',
-              label: 'Overview & Fields',
+              label: t('table_detail.overview'),
               children: (
                 <Space direction="vertical" size="large" style={{ width: '100%' }}>
                   <Descriptions bordered column={2} size="small">
-                    <Descriptions.Item label="Type">{table.type.toUpperCase()}</Descriptions.Item>
-                    <Descriptions.Item label="Schema">{table.schema_name || '-'}</Descriptions.Item>
-                    <Descriptions.Item label="Created At">{new Date(table.created_at).toLocaleString()}</Descriptions.Item>
-                    <Descriptions.Item label="Tags">
+                    <Descriptions.Item label={t('table_detail.type')}>{table.type.toUpperCase()}</Descriptions.Item>
+                    <Descriptions.Item label={t('table_detail.schema')}>{table.schema_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label={t('table_detail.created_at')}>{new Date(table.created_at).toLocaleString()}</Descriptions.Item>
+                    <Descriptions.Item label={t('table_detail.tags')}>
                       <Space wrap>
                         {tableTags.length > 0 ? (
                           tableTags.map(t => <Tag key={t.id} color="blue">{t.name}</Tag>)
@@ -170,13 +172,13 @@ const TableDetailPage: React.FC = () => {
                         )}
                       </Space>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Description" span={2}>
-                      {table.description || <Text type="secondary">No description provided.</Text>}
+                    <Descriptions.Item label={t('table_detail.description')} span={2}>
+                      {table.description || <Text type="secondary">{t('table_detail.no_description')}</Text>}
                     </Descriptions.Item>
                   </Descriptions>
                   
                   <div>
-                    <Title level={5}>Fields ({table.fields?.length || 0})</Title>
+                    <Title level={5}>{t('table_detail.fields')} ({table.fields?.length || 0})</Title>
                     <Table 
                       dataSource={table.fields} 
                       columns={fieldColumns} 
@@ -190,34 +192,34 @@ const TableDetailPage: React.FC = () => {
             },
             {
               key: 'lineage',
-              label: 'Lineage (Direct)',
+              label: t('table_detail.lineage_direct'),
               children: (
                 <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                  <Title level={5}>Upstream (Data Sources)</Title>
+                  <Title level={5}>{t('table_detail.upstream')}</Title>
                   <Table 
                     dataSource={lineage.upstream} 
                     columns={lineageColumns('Source')} 
                     rowKey="id" 
                     pagination={false} 
                     size="small" 
-                    locale={{ emptyText: 'No upstream dependencies found.' }}
+                    locale={{ emptyText: t('table_detail.no_upstream') }}
                   />
                   <Divider style={{ margin: '16px 0' }} />
-                  <Title level={5}>Downstream (Impacted Tables)</Title>
+                  <Title level={5}>{t('table_detail.downstream')}</Title>
                   <Table 
                     dataSource={lineage.downstream} 
                     columns={lineageColumns('Target')} 
                     rowKey="id" 
                     pagination={false} 
                     size="small"
-                    locale={{ emptyText: 'No downstream tables dependent on this table.' }}
+                    locale={{ emptyText: t('table_detail.no_downstream') }}
                   />
                 </Space>
               )
             },
             {
               key: 'analysis',
-              label: 'Blast Radius (Business Impact)',
+              label: t('table_detail.blast_radius'),
               children: (
                 <div style={{ padding: '8px 0' }}>
                   <BlastRadius tableId={table.id} />
@@ -228,7 +230,7 @@ const TableDetailPage: React.FC = () => {
               key: 'quality',
               label: (
                 <Space>
-                  Quality Check
+                  {t('table_detail.quality_check')}
                   {hasQualityIssues && <Badge dot status="error" />}
                 </Space>
               ),
