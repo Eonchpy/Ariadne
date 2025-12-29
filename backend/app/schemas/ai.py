@@ -11,6 +11,23 @@ class AIMessage(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ActionPayload(BaseModel):
+    id: Optional[str] = None
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, Any]] = Field(default_factory=list)
+    graph_type: Optional[str] = None
+    direction: Optional[str] = None
+    color: Optional[str] = None
+    force_extract: bool = True
+
+
+class ActionItem(BaseModel):
+    id: str
+    type: Literal["focus_node", "trace_path"]
+    label: str
+    payload: ActionPayload
+
+
 class AIChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     query: Optional[str] = None
@@ -27,6 +44,7 @@ class AIChatRequest(BaseModel):
 class AIChatResponse(BaseModel):
     messages: list[AIMessage] = Field(default_factory=list)
     suggested_questions: list[str] = Field(default_factory=list)
+    actions: list[ActionItem] = Field(default_factory=list)
 
 
 class AIConversationSummary(BaseModel):

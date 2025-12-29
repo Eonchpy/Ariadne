@@ -11,21 +11,21 @@ import ReactFlow, {
   useReactFlow
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Card, Space, Select, Slider, Button, message, Empty, Drawer, List, Modal } from 'antd';
+import { Card, Space, Select, Slider, Button, message, Empty, Drawer, List } from 'antd';
 import { 
   FilterOutlined, 
   RetweetOutlined, 
   PlusOutlined, 
   SearchOutlined
 } from '@ant-design/icons';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { tablesApi } from '@/api/endpoints/tables';
-import { lineageApi } from '@/api/endpoints/lineage';
 import TableNode from '@/components/lineage/TableNode';
 import FieldNode from '@/components/lineage/FieldNode';
 import BucketNode from '@/components/lineage/BucketNode';
 import LineageErrorBoundary from '@/components/lineage/LineageErrorBoundary';
 import CreateLineageModal from '@/components/lineage/CreateLineageModal';
+import EdgeDetailDrawer from '@/components/lineage/EdgeDetailDrawer';
 import client from '@/api/client';
 import type { Table as MetadataTable } from '@/types/api';
 import dagre from 'dagre';
@@ -234,11 +234,19 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'LR') => {
 const LineageGraphContent: React.FC = () => {
   const { tableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { setCenter } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [depth, setDepth] = useState(3);
-  const [direction, setDirection] = useState<'upstream' | 'downstream'>('upstream');
+  
+  // Initialize direction from URL if present, otherwise default to upstream
+  const [direction, setDirection] = useState<'upstream' | 'downstream'>(() => {
+      const params = new URLSearchParams(location.search);
+      const dir = params.get('direction');
+      return (dir === 'upstream' || dir === 'downstream') ? dir : 'upstream';
+  });
+
   const [loading, setLoading] = useState(false);
   const [isCreateModalVisible, setCreateModalVisible] = useState(false);
   const [rawLineageData, setRawLineageData] = useState<any>(null);
@@ -253,6 +261,11 @@ const LineageGraphContent: React.FC = () => {
   const [bucketTables, setBucketTables] = useState<any[]>([]);
   const [extractedTableIds, setExtractedTableIds] = useState<string[]>([]);
   const [lastExtractedId, setLastExtractedId] = useState<string | null>(null);
+  const [edgeDrawerVisible, setEdgeDrawerVisible] = useState(false);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  
+  // Race condition protection
+  const latestRequestId = React.useRef(0);
 
   const fetchTables = async () => {
     try { const response = await tablesApi.list({ size: 500 }); setAllTables(response.items); } catch (error) { console.error(error); }
@@ -292,14 +305,24 @@ const LineageGraphContent: React.FC = () => {
 
   const fetchLineage = useCallback(async () => {
     if (!tableId) return;
+    
+    const requestId = ++latestRequestId.current;
     setLoading(true);
+    
     try {
       setIsFirstLoad(true);
       const params = { table_id: tableId, direction, depth };
       const data = await client.get<any, any>(`/lineage/graph`, { params });
-      setRawLineageData(data);
-    } catch (error) { message.error('Failed to load'); }
-    finally { setLoading(false); }
+      
+      // Only update if this is still the latest request
+      if (requestId === latestRequestId.current) {
+          setRawLineageData(data);
+      }
+    } catch (error) { 
+        if (requestId === latestRequestId.current) message.error('Failed to load'); 
+    } finally { 
+        if (requestId === latestRequestId.current) setLoading(false); 
+    }
   }, [tableId, direction, depth]);
 
   const resetHighlight = () => {
@@ -323,25 +346,11 @@ const LineageGraphContent: React.FC = () => {
 
 
   const onEdgeClick = (_: any, edge: any) => {
-    // Only allow deleting real technical edges
+    // Only allow details for real technical edges with a database ID
     const dbId = edge.data?.dbId;
     if (dbId) {
-        Modal.confirm({
-            title: 'Delete Lineage Relationship?',
-            content: 'This will permanently remove the technical data flow relationship between these entities.',
-            okText: 'Delete',
-            okType: 'danger',
-            cancelText: 'Cancel',
-            onOk: async () => {
-                try {
-                    await lineageApi.delete(dbId);
-                    message.success('Lineage relationship deleted');
-                    fetchLineage();
-                } catch (error) {
-                    message.error('Failed to delete lineage relationship');
-                }
-            }
-        });
+        setSelectedEdgeId(dbId);
+        setEdgeDrawerVisible(true);
     }
   };
 
@@ -526,6 +535,12 @@ const LineageGraphContent: React.FC = () => {
         onSuccess={fetchLineage} 
         initialSourceTableId={direction === 'downstream' ? tableId : undefined} 
         initialTargetTableId={direction === 'upstream' ? tableId : undefined} 
+      />
+      <EdgeDetailDrawer
+        id={selectedEdgeId}
+        open={edgeDrawerVisible}
+        onClose={() => setEdgeDrawerVisible(false)}
+        onDeleteSuccess={fetchLineage}
       />
     </LineageErrorBoundary>
   );

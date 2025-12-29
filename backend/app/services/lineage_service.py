@@ -24,6 +24,10 @@ from app.schemas.lineage import (
     LineageGraphEdge,
     LineageSource,
     LineageRelationship,
+    LineageRelationshipDetail,
+    LineageRelationshipNode,
+    LineageRelationshipTransformation,
+    LineageRelationshipMetadata,
 )
 from app.graph import queries
 from app.repositories.table_repo import TableRepository
@@ -201,6 +205,65 @@ class LineageService:
                     detail="Lineage relationship not found",
                 )
         await self._cache_flush_prefixes(["lineage:", "blast:", "qc:", "paths:", "trace:"])
+
+    async def get_relationship_detail(self, rel_id: str) -> LineageRelationshipDetail:
+        try:
+            rel_int = int(rel_id)
+        except Exception:
+            rel_int = None
+
+        async with self.driver.session() as session:
+            result = await session.run(
+                queries.GET_RELATIONSHIP_DETAIL,
+                rel_element_id=rel_id,
+                rel_int=rel_int,
+            )
+            record = await result.single()
+
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lineage relationship not found")
+
+        def _node_type(labels: list[str] | None) -> str:
+            labels = labels or []
+            if "Table" in labels:
+                return "table"
+            if "Field" in labels:
+                return "field"
+            return "unknown"
+
+        source = LineageRelationshipNode(
+            id=str(record.get("source_id")),
+            name=record.get("source_name"),
+            type=_node_type(record.get("source_labels")),
+        )
+        target = LineageRelationshipNode(
+            id=str(record.get("target_id")),
+            name=record.get("target_name"),
+            type=_node_type(record.get("target_labels")),
+        )
+
+        transformation = LineageRelationshipTransformation(
+            type=record.get("transformation_type"),
+            logic=record.get("transformation_logic"),
+            description=None,
+        )
+
+        metadata = LineageRelationshipMetadata(
+            source=record.get("lineage_source"),
+            confidence=record.get("confidence"),
+            created_by=record.get("created_by"),
+            created_at=record.get("created_at"),
+        )
+
+        rel_identifier = record.get("rel_id") or record.get("rel_int") or rel_id
+
+        return LineageRelationshipDetail(
+            id=str(rel_identifier),
+            source=source,
+            target=target,
+            transformation=transformation,
+            metadata=metadata,
+        )
 
     async def trace_field(self, field_id: str, direction: str = "both", depth: int = 5) -> FieldTraceResponse:
         if not self.db_session:

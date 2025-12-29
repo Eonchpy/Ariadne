@@ -12,6 +12,7 @@ import TableDetailPage from './pages/Tables/TableDetailPage';
 import LineageGraph from './pages/Lineage/LineageGraph';
 import BulkOperations from './pages/Bulk/BulkOperations';
 import TagManagement from './pages/Settings/TagManagement';
+import Dashboard from './pages/Dashboard/Dashboard';
 import { ConfigProvider } from 'antd';
 
 const App: React.FC = () => {
@@ -33,7 +34,7 @@ const App: React.FC = () => {
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route element={<MainLayout />}>
-              <Route path="/" element={<div>Dashboard Placeholder</div>} />
+              <Route path="/" element={<Dashboard />} />
               <Route path="/sources" element={<DataSourcesList />} />
               <Route path="/sources/new" element={<DataSourceForm />} />
               <Route path="/sources/:id/edit" element={<DataSourceForm />} />

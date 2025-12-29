@@ -60,11 +60,13 @@ async def chat(
         ]
 
         try:
-            summary, statuses, duration_ms = await svc.run_llm_with_tools(base_messages, tools, stream=False)
+            summary, statuses, actions, duration_ms = await svc.run_llm_with_tools(base_messages, tools, stream=False)
             for st in statuses:
                 yield f"event: status\ndata: {json.dumps(st)}\n\n"
             if summary:
                 yield f"event: data\ndata: {json.dumps({'type': 'text', 'content': summary})}\n\n"
+            if actions:
+                yield f"event: data\ndata: {json.dumps({'type': 'actions', 'content': actions})}\n\n"
             else:
                 yield f"event: data\ndata: {json.dumps({'type': 'text', 'content': 'AI assistant暂未返回结果，请稍后重试'})}\n\n"
         except Exception as exc:

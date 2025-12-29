@@ -180,3 +180,30 @@ class QualityCheckResponse(BaseModel):
     severity_level: Literal["high", "low"]
     issue_count: int
     audit_timestamp: str
+
+
+class LineageRelationshipNode(BaseModel):
+    id: str
+    name: Optional[str] = None
+    type: Literal["table", "field"] | str = "table"
+
+
+class LineageRelationshipTransformation(BaseModel):
+    type: Optional[str] = None
+    logic: Optional[str] = None
+    description: Optional[str] = None
+
+
+class LineageRelationshipMetadata(BaseModel):
+    source: Optional[str] = None
+    confidence: Optional[float] = None
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class LineageRelationshipDetail(BaseModel):
+    id: str
+    source: LineageRelationshipNode
+    target: LineageRelationshipNode
+    transformation: LineageRelationshipTransformation
+    metadata: LineageRelationshipMetadata

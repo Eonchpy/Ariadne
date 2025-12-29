@@ -151,3 +151,22 @@ CALL apoc.nodes.cycles(
 ) YIELD path
 RETURN path
 """
+
+GET_RELATIONSHIP_DETAIL = """
+MATCH (s)-[r]-(t)
+WHERE elementId(r) = $rel_element_id OR id(r) = $rel_int
+RETURN elementId(r) AS rel_id,
+       id(r) AS rel_int,
+       r.lineage_source AS lineage_source,
+       r.transformation_type AS transformation_type,
+       r.transformation_logic AS transformation_logic,
+       r.confidence AS confidence,
+       r.created_by AS created_by,
+       r.created_at AS created_at,
+       labels(s) AS source_labels,
+       s.id AS source_id,
+       s.name AS source_name,
+       labels(t) AS target_labels,
+       t.id AS target_id,
+       t.name AS target_name
+"""

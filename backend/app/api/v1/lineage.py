@@ -13,6 +13,7 @@ from app.schemas.lineage import (
     PathsResponse,
     CycleListResponse,
     ImpactAnalysisResponse,
+    LineageRelationshipDetail,
 )
 from app.services.lineage_service import LineageService
 from app.graph.client import neo4j_dependency
@@ -184,3 +185,14 @@ async def quality_check(
 ):
     service = LineageService(driver, db_session=session, redis=redis)
     return await service.quality_check(table_id=table_id, max_depth=depth)
+
+
+@router.get("/relationship/{rel_id}", response_model=LineageRelationshipDetail)
+async def get_relationship_detail(
+    rel_id: str,
+    driver=Depends(neo4j_dependency),
+    redis=Depends(redis_dependency),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = LineageService(driver, db_session=session, redis=redis)
+    return await service.get_relationship_detail(rel_id=rel_id)
